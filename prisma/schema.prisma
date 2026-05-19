@@ -1,0 +1,68 @@
+// GeniCheck Prisma Schema
+// 공통 파일 - 스키마 변경 전 반드시 팀원에게 먼저 말한다
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =========================
+// Enums
+// =========================
+enum UserRole {
+  APPLICANT
+  COMPANY
+  HR_MANAGER
+}
+
+// =========================
+// Auth / User Models
+// =========================
+
+// 지원자 (개인 회원)
+model Applicant {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  password     String
+  name         String
+  refreshToken String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("applicants")
+}
+
+// 기업 회원
+model Company {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  password       String
+  companyName    String
+  businessNumber String   @unique
+  companyCode    String?  @unique // HR 매니저 로그인 시 사용
+  refreshToken  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  hrManagers HrManager[]
+
+  @@map("companies")
+}
+
+// HR 담당자 (기업 소속)
+model HrManager {
+  id           String   @id @default(uuid())
+  phone        String   @unique
+  name         String?
+  refreshToken String?
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("hr_managers")
+}

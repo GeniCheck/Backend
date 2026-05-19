@@ -5,3 +5,4 @@ export { CompanyLoginDto } from './company-login.dto';
 export { CompanyOtpVerifyDto } from './company-otp-verify.dto';
 export { HrLoginDto } from './hr-login.dto';
 export { RefreshTokenDto } from './refresh-token.dto';
+export { VerifyEmailDto } from './verify-email.dto';

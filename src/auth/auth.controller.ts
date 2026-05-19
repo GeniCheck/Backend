@@ -23,6 +23,7 @@ import {
   CompanyOtpVerifyDto,
   HrLoginDto,
   RefreshTokenDto,
+  VerifyEmailDto,
 } from './dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -37,12 +38,25 @@ export class AuthController {
   // 지원자 회원가입
   // ===========================
   @Post('applicant/signup')
-  @ApiOperation({ summary: '지원자 회원가입' })
-  @ApiResponse({ status: 201, description: '회원가입 성공' })
+  @ApiOperation({ summary: '지원자 회원가입 (완료 후 인증 이메일 자동 발송)' })
+  @ApiResponse({ status: 201, description: '회원가입 성공, 인증 이메일 발송됨' })
   @ApiResponse({ status: 409, description: '이미 등록된 이메일' })
-  @ResponseMessage('회원가입이 완료되었습니다.')
+  @ResponseMessage('회원가입이 완료되었습니다. 이메일 인증을 진행해주세요.')
   async applicantSignup(@Body() dto: ApplicantSignupDto) {
     return this.authService.applicantSignup(dto);
+  }
+
+  // ===========================
+  // 이메일 인증 코드 확인
+  // ===========================
+  @Post('applicant/verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '지원자 이메일 인증 코드 확인' })
+  @ApiResponse({ status: 200, description: '이메일 인증 성공' })
+  @ApiResponse({ status: 400, description: '코드 불일치 또는 만료' })
+  @ResponseMessage('이메일 인증이 완료되었습니다.')
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto);
   }
 
   // ===========================

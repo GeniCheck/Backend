@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -16,8 +17,10 @@ import {
   CompanyOtpVerifyDto,
   HrLoginDto,
   RefreshTokenDto,
+  VerifyEmailDto,
 } from './dto';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { EmailService } from './email/email.service';
 
 @Injectable()
 export class AuthService {
@@ -25,6 +28,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
   ) {}
 
   // ===========================
@@ -48,6 +52,21 @@ export class AuthService {
       },
     });
 
+    // 이메일 인증 코드 생성 및 저장
+    const code = this.generateSixDigitCode();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10분
+
+    await this.prisma.emailVerification.create({
+      data: { email: dto.email, code, expiresAt },
+    });
+
+    // 인증 이메일 발송 (실패해도 회원가입은 완료)
+    try {
+      await this.emailService.sendVerificationEmail(dto.email, code);
+    } catch {
+      // 이메일 발송 실패 시 로그는 EmailService 내부에서 처리
+    }
+
     const tokens = await this.generateTokens({
       sub: applicant.id,
       role: 'APPLICANT',
@@ -56,6 +75,42 @@ export class AuthService {
     await this.updateRefreshToken('APPLICANT', applicant.id, tokens.refreshToken);
 
     return tokens;
+  }
+
+  // ===========================
+  // 이메일 인증 코드 확인
+  // ===========================
+  async verifyEmail(dto: VerifyEmailDto) {
+    const record = await this.prisma.emailVerification.findFirst({
+      where: {
+        email: dto.email,
+        code: dto.code,
+        isUsed: false,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!record) {
+      throw new BadRequestException('인증 코드가 올바르지 않습니다.');
+    }
+
+    if (record.expiresAt < new Date()) {
+      throw new BadRequestException('인증 코드가 만료되었습니다. 다시 요청해주세요.');
+    }
+
+    // 코드 사용 처리 + 지원자 인증 완료 처리 (트랜잭션)
+    await this.prisma.$transaction([
+      this.prisma.emailVerification.update({
+        where: { id: record.id },
+        data: { isUsed: true },
+      }),
+      this.prisma.applicant.update({
+        where: { email: dto.email },
+        data: { isEmailVerified: true },
+      }),
+    ]);
+
+    return { isEmailVerified: true };
   }
 
   // ===========================
@@ -111,6 +166,7 @@ export class AuthService {
         password: hashedPassword,
         companyName: dto.companyName,
         businessNumber: normalizedBizNumber,
+        phone: dto.phone,
       },
     });
 
@@ -355,5 +411,9 @@ export class AuthService {
         });
         break;
     }
+  }
+
+  private generateSixDigitCode(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
   }
 }

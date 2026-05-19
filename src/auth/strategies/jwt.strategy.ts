@@ -12,11 +12,23 @@ export interface JwtPayload {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-  constructor(configService: ConfigService) {
+  constructor(private readonly configService: ConfigService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_ACCESS_SECRET'),
+      // secretOrKeyProvider 를 사용해 ConfigService 가 완전히 초기화된 후 secret 을 읽음
+      secretOrKeyProvider: (
+        _request: unknown,
+        _rawJwtToken: unknown,
+        done: (err: Error | null, secret?: string) => void,
+      ) => {
+        const secret = configService.get<string>('JWT_ACCESS_SECRET');
+        if (!secret) {
+          done(new Error('JWT_ACCESS_SECRET is not configured'));
+        } else {
+          done(null, secret);
+        }
+      },
     });
   }
 

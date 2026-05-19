@@ -64,4 +64,49 @@ export class EmailService {
       throw error;
     }
   }
+
+  /**
+   * CEO 2단계 로그인 OTP 발송
+   * TODO: SMS 서비스 연동 후 이 메서드를 SMS 발송으로 교체
+   *       현재는 SMS 미지원으로 이메일 폴백 처리
+   */
+  async sendOtpEmail(to: string, code: string): Promise<void> {
+    const subject = '[GeniCheck] OTP 인증 코드';
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #333;">CEO 로그인 OTP 인증</h2>
+        <p>아래 OTP 코드를 입력해 로그인을 완료해주세요.</p>
+        <div style="
+          background: #f4f4f4;
+          border-radius: 8px;
+          padding: 20px;
+          text-align: center;
+          font-size: 32px;
+          font-weight: bold;
+          letter-spacing: 8px;
+          color: #222;
+          margin: 24px 0;
+        ">
+          ${code}
+        </div>
+        <p style="color: #888; font-size: 13px;">
+          이 코드는 <strong>3분</strong> 동안 유효합니다.<br/>
+          본인이 요청하지 않은 경우 즉시 비밀번호를 변경해주세요.
+        </p>
+      </div>
+    `;
+
+    try {
+      await this.transporter.sendMail({
+        from: this.fromAddress,
+        to,
+        subject,
+        html,
+      });
+      this.logger.log(`OTP 이메일 발송 완료: ${to}`);
+    } catch (error) {
+      this.logger.error(`OTP 이메일 발송 실패: ${to}`, error);
+      throw error;
+    }
+  }
 }

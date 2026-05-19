@@ -149,6 +149,9 @@ export class AuthController {
   @ResponseMessage('로그아웃되었습니다.')
   async logout(@Req() req: Request) {
     const user = req.user as JwtPayload;
-    await this.authService.logout(user);
+    // Authorization 헤더에서 Access Token 추출해 블랙리스트 등록
+    const authHeader = (req.headers as Record<string, string>)['authorization'] ?? '';
+    const accessToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    await this.authService.logout(user, accessToken);
   }
 }

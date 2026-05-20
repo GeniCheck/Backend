@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ApplicantSignupDto,
@@ -16,8 +17,12 @@ import {
   CompanyOtpVerifyDto,
   HrLoginDto,
   RefreshTokenDto,
+  VerifyEmailDto,
 } from './dto';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { EmailService } from './email/email.service';
+import { SmsService } from './sms/sms.service';
+import { RedisService } from './redis/redis.service';
 
 @Injectable()
 export class AuthService {
@@ -25,6 +30,9 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
+    private readonly smsService: SmsService,
+    private readonly redisService: RedisService,
   ) {}
 
   // ===========================
@@ -48,6 +56,21 @@ export class AuthService {
       },
     });
 
+    // 이메일 인증 코드 생성 및 저장
+    const code = this.generateSixDigitCode();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10분
+
+    await this.prisma.emailVerification.create({
+      data: { email: dto.email, code, expiresAt },
+    });
+
+    // 인증 이메일 발송 (실패해도 회원가입은 완료)
+    try {
+      await this.emailService.sendVerificationEmail(dto.email, code);
+    } catch {
+      // 이메일 발송 실패 시 로그는 EmailService 내부에서 처리
+    }
+
     const tokens = await this.generateTokens({
       sub: applicant.id,
       role: 'APPLICANT',
@@ -56,6 +79,42 @@ export class AuthService {
     await this.updateRefreshToken('APPLICANT', applicant.id, tokens.refreshToken);
 
     return tokens;
+  }
+
+  // ===========================
+  // 이메일 인증 코드 확인
+  // ===========================
+  async verifyEmail(dto: VerifyEmailDto) {
+    const record = await this.prisma.emailVerification.findFirst({
+      where: {
+        email: dto.email,
+        code: dto.code,
+        isUsed: false,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!record) {
+      throw new BadRequestException('인증 코드가 올바르지 않습니다.');
+    }
+
+    if (record.expiresAt < new Date()) {
+      throw new BadRequestException('인증 코드가 만료되었습니다. 다시 요청해주세요.');
+    }
+
+    // 코드 사용 처리 + 지원자 인증 완료 처리 (트랜잭션)
+    await this.prisma.$transaction([
+      this.prisma.emailVerification.update({
+        where: { id: record.id },
+        data: { isUsed: true },
+      }),
+      this.prisma.applicant.update({
+        where: { email: dto.email },
+        data: { isEmailVerified: true },
+      }),
+    ]);
+
+    return { isEmailVerified: true };
   }
 
   // ===========================
@@ -111,6 +170,7 @@ export class AuthService {
         password: hashedPassword,
         companyName: dto.companyName,
         businessNumber: normalizedBizNumber,
+        phone: dto.phone,
       },
     });
 
@@ -122,7 +182,7 @@ export class AuthService {
   }
 
   // ===========================
-  // CEO 로그인 Step1 (이메일/비밀번호 → tempToken)
+  // CEO 로그인 Step1 (이메일/비밀번호 → tempToken + OTP 발송)
   // ===========================
   async companyLoginStep1(dto: CompanyLoginDto) {
     const company = await this.prisma.company.findUnique({
@@ -137,7 +197,28 @@ export class AuthService {
       throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
 
-    // 임시 토큰 발급 (5분 유효)
+    // 기존 미사용 OTP 무효화 (같은 phone 으로 발급된 것)
+    await this.prisma.otpVerification.updateMany({
+      where: { phone: company.phone, isUsed: false },
+      data: { isUsed: true },
+    });
+
+    // 새 OTP 생성 (3분 유효)
+    const otpCode = this.generateSixDigitCode();
+    const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
+
+    await this.prisma.otpVerification.create({
+      data: { phone: company.phone, code: otpCode, expiresAt },
+    });
+
+    // OTP SMS 발송 (실패해도 로그인 흐름은 계속 진행 — OTP는 이미 DB에 저장됨)
+    try {
+      await this.smsService.sendOtp(company.phone, otpCode);
+    } catch {
+      // 발송 실패 시 로그는 SmsService 내부에서 처리
+    }
+
+    // 임시 토큰 발급 (5분 유효 — OTP 유효시간 3분보다 여유 있게)
     const tempToken = this.jwtService.sign(
       { sub: company.id, purpose: 'otp_verify' },
       {
@@ -146,8 +227,6 @@ export class AuthService {
       },
     );
 
-    // TODO: 실제 OTP 발송 로직 (이메일/SMS)
-
     return { tempToken };
   }
 
@@ -155,6 +234,7 @@ export class AuthService {
   // CEO OTP 검증 → 토큰 발급
   // ===========================
   async companyOtpVerify(dto: CompanyOtpVerifyDto) {
+    // 1. tempToken 검증
     let payload: { sub: string; purpose: string };
     try {
       payload = this.jwtService.verify(dto.tempToken, {
@@ -168,18 +248,62 @@ export class AuthService {
       throw new BadRequestException('유효하지 않은 토큰입니다.');
     }
 
-    // TODO: 실제 OTP 코드 검증 로직
-    // 현재는 개발 편의를 위해 '000000' 을 통과시킴
-    if (dto.otpCode !== '000000') {
-      throw new UnauthorizedException('OTP 코드가 올바르지 않습니다.');
+    // 2. companyId → phone 조회
+    const company = await this.prisma.company.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, phone: true },
+    });
+    if (!company) {
+      throw new UnauthorizedException('기업 정보를 찾을 수 없습니다.');
     }
 
+    // 3. 유효한 OTP 레코드 조회 (미사용 + 만료 전)
+    const otpRecord = await this.prisma.otpVerification.findFirst({
+      where: {
+        phone: company.phone,
+        isUsed: false,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!otpRecord) {
+      throw new UnauthorizedException('OTP 코드가 만료되었습니다. 다시 로그인해주세요.');
+    }
+
+    // 4. 5회 실패 잠금 확인
+    if (otpRecord.failCount >= 5) {
+      throw new UnauthorizedException('OTP 인증 5회 실패. 30분 후 다시 시도해주세요.');
+    }
+
+    // 5. 코드 일치 확인
+    if (otpRecord.code !== dto.otpCode) {
+      await this.prisma.otpVerification.update({
+        where: { id: otpRecord.id },
+        data: { failCount: { increment: 1 } },
+      });
+
+      const newFailCount = otpRecord.failCount + 1; // increment 반영
+      const remaining = 5 - newFailCount;
+      if (remaining <= 0) {
+        throw new UnauthorizedException('OTP 인증 5회 실패. 30분 후 다시 시도해주세요.');
+      }
+      throw new UnauthorizedException(`OTP 코드가 올바르지 않습니다. 남은 시도 횟수: ${remaining}회`);
+    }
+
+    // 6. 인증 성공 — OTP 사용 처리
+    await this.prisma.otpVerification.update({
+      where: { id: otpRecord.id },
+      data: { isUsed: true },
+    });
+
+    // 7. 토큰 발급
     const tokens = await this.generateTokens({
-      sub: payload.sub,
+      sub: company.id,
       role: 'COMPANY',
     });
 
-    await this.updateRefreshToken('COMPANY', payload.sub, tokens.refreshToken);
+    await this.updateRefreshToken('COMPANY', company.id, tokens.refreshToken);
 
     return tokens;
   }
@@ -213,7 +337,7 @@ export class AuthService {
   }
 
   // ===========================
-  // 토큰 갱신
+  // 토큰 갱신 (Refresh Token Rotation)
   // ===========================
   async refreshToken(dto: RefreshTokenDto) {
     let payload: JwtPayload;
@@ -231,28 +355,50 @@ export class AuthService {
       throw new UnauthorizedException('유효하지 않은 Refresh Token입니다.');
     }
 
-    const isTokenValid = await bcrypt.compare(dto.refreshToken, storedToken);
+    const isTokenValid = await bcrypt.compare(this.preHashToken(dto.refreshToken), storedToken);
     if (!isTokenValid) {
       throw new UnauthorizedException('유효하지 않은 Refresh Token입니다.');
     }
 
-    // 새 Access Token 발급
-    const accessToken = this.jwtService.sign(
-      { sub: payload.sub, role: payload.role },
-      {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-        expiresIn: this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '1h',
-      },
-    );
+    // Access Token + Refresh Token 모두 새로 발급 (Rotation)
+    const tokens = await this.generateTokens({
+      sub: payload.sub,
+      role: payload.role,
+    });
 
-    return { accessToken };
+    // 새 Refresh Token으로 DB 교체
+    await this.updateRefreshToken(payload.role, payload.sub, tokens.refreshToken);
+
+    return tokens;
   }
 
   // ===========================
   // 로그아웃
   // ===========================
-  async logout(user: JwtPayload) {
+  async logout(user: JwtPayload, accessToken: string) {
+    // 1. DB에서 refreshToken 삭제 (기존 로직 유지)
     await this.clearRefreshToken(user.role, user.sub);
+
+    // 2. Access Token을 Redis 블랙리스트에 추가
+    //    TTL = JWT_ACCESS_EXPIRES_IN(1h) = 3600초
+    //    만료된 토큰은 어차피 검증 실패하므로 TTL이 지나면 자동 삭제됨
+    const ttl = this.parseTtlToSeconds(
+      this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '1h',
+    );
+    await this.redisService.addToBlacklist(accessToken, ttl);
+  }
+
+  // "1h" / "7d" / "30m" 형식을 초 단위로 변환
+  private parseTtlToSeconds(ttl: string): number {
+    const unit = ttl.slice(-1);
+    const value = parseInt(ttl.slice(0, -1), 10);
+    switch (unit) {
+      case 's': return value;
+      case 'm': return value * 60;
+      case 'h': return value * 60 * 60;
+      case 'd': return value * 60 * 60 * 24;
+      default:  return 3600; // fallback: 1h
+    }
   }
 
   // ===========================
@@ -265,10 +411,15 @@ export class AuthService {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
         expiresIn: this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '1h',
       }),
-      this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d',
-      }),
+      // jti(JWT ID)를 추가해 같은 초에 발급해도 항상 다른 토큰이 생성되도록 보장
+      // 이 없으면 iat가 초 단위라 동일 payload+secret+expiresIn → 동일 토큰 → Rotation 무력화
+      this.jwtService.signAsync(
+        { ...payload, jti: randomUUID() },
+        {
+          secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+          expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d',
+        },
+      ),
     ]);
 
     return { accessToken, refreshToken };
@@ -279,7 +430,10 @@ export class AuthService {
     userId: string,
     refreshToken: string,
   ) {
-    const hashedToken = await bcrypt.hash(refreshToken, 10);
+    // bcrypt는 입력의 처음 72바이트만 사용하므로, JWT처럼 긴 토큰은 그대로 넣으면
+    // 토큰이 달라도 앞부분이 같으면 같은 해시로 인식되어 Rotation이 무력화됨.
+    // SHA-256 으로 먼저 해싱해 고정 길이(64자 hex)로 줄인 뒤 bcrypt 적용.
+    const hashedToken = await bcrypt.hash(this.preHashToken(refreshToken), 10);
 
     switch (role) {
       case 'APPLICANT':
@@ -355,5 +509,14 @@ export class AuthService {
         });
         break;
     }
+  }
+
+  private generateSixDigitCode(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  // bcrypt 72바이트 한계 우회를 위한 사전 해싱
+  private preHashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 }

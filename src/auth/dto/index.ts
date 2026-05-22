@@ -4,4 +4,6 @@ export { CompanySignupDto } from './company-signup.dto';
 export { CompanyLoginDto } from './company-login.dto';
 export { CompanyOtpVerifyDto } from './company-otp-verify.dto';
 export { HrLoginDto } from './hr-login.dto';
+export { HrRegisterDto } from './hr-register.dto';
+export { HrOtpVerifyDto } from './hr-otp-verify.dto';
 export { RefreshTokenDto } from './refresh-token.dto';

@@ -22,6 +22,8 @@ import {
   CompanyLoginDto,
   CompanyOtpVerifyDto,
   HrLoginDto,
+  HrRegisterDto,
+  HrOtpVerifyDto,
   RefreshTokenDto,
 } from './dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -97,16 +99,63 @@ export class AuthController {
   }
 
   // ===========================
-  // HR 매니저 로그인
+  // HR 매니저 등록 Step1 (CEO OTP 발송)
+  // ===========================
+  @Post('hr/register')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'HR 매니저 등록 1단계 - CEO 인증 OTP 발송 (COMPANY 권한 필요)' })
+  @ApiResponse({ status: 200, description: '임시 토큰 발급 성공, CEO 전화번호로 OTP 발송' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 409, description: '이미 등록된 전화번호' })
+  @ResponseMessage('OTP가 발송되었습니다. CEO 전화번호를 확인해주세요.')
+  async hrRegister(@Body() dto: HrRegisterDto, @Req() req: Request) {
+    const user = req.user as JwtPayload;
+    return this.authService.hrRegister(dto, user.sub);
+  }
+
+  // ===========================
+  // HR 매니저 등록 Step2 (OTP 검증 → HR 생성)
+  // ===========================
+  @Post('hr/register/verify')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'HR 매니저 등록 2단계 - OTP 검증 및 HR 계정 생성 (COMPANY 권한 필요)' })
+  @ApiResponse({ status: 200, description: 'HR 매니저 등록 완료' })
+  @ApiResponse({ status: 400, description: '유효하지 않은 토큰' })
+  @ApiResponse({ status: 401, description: 'OTP 검증 실패' })
+  @ResponseMessage('HR 매니저 등록이 완료되었습니다.')
+  async hrRegisterVerify(@Body() dto: HrOtpVerifyDto) {
+    return this.authService.hrRegisterVerify(dto);
+  }
+
+  // ===========================
+  // HR 매니저 로그인 Step1 (OTP 발송)
   // ===========================
   @Post('hr/login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'HR 매니저 로그인' })
-  @ApiResponse({ status: 200, description: '로그인 성공' })
+  @ApiOperation({ summary: 'HR 매니저 로그인 1단계 - 전화번호/기업코드 확인 후 OTP 발송' })
+  @ApiResponse({ status: 200, description: '임시 토큰 발급 성공, HR 전화번호로 OTP 발송' })
   @ApiResponse({ status: 401, description: '인증 실패' })
-  @ResponseMessage('로그인에 성공했습니다.')
+  @ResponseMessage('OTP가 발송되었습니다. 전화번호를 확인해주세요.')
   async hrLogin(@Body() dto: HrLoginDto) {
     return this.authService.hrLogin(dto);
+  }
+
+  // ===========================
+  // HR 매니저 로그인 Step2 (OTP 검증 → 토큰 발급)
+  // ===========================
+  @Post('hr/otp/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'HR 매니저 로그인 2단계 - OTP 검증 및 토큰 발급' })
+  @ApiResponse({ status: 200, description: 'OTP 검증 성공, 토큰 발급' })
+  @ApiResponse({ status: 400, description: '유효하지 않은 토큰' })
+  @ApiResponse({ status: 401, description: 'OTP 검증 실패' })
+  @ResponseMessage('로그인에 성공했습니다.')
+  async hrOtpVerify(@Body() dto: HrOtpVerifyDto) {
+    return this.authService.hrOtpVerify(dto);
   }
 
   // ===========================

@@ -38,6 +38,7 @@ model Applicant {
 
 // 기업 회원
 model Company {
+<<<<<<< Updated upstream
   id             String   @id @default(uuid())
   email          String   @unique
   password       String
@@ -47,6 +48,22 @@ model Company {
   refreshToken  String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+=======
+  id                 String   @id @default(uuid())
+  email              String   @unique
+  password           String
+  companyName        String
+  businessNumber     String   @unique
+  representativeName String
+  startDate          String   // 개업일자 YYYYMMDD
+  phone              String
+  companyCode        String?  @unique // HR 매니저 로그인 시 사용
+  isVerified         Boolean  @default(false)
+  isPaid             Boolean  @default(false)
+  refreshToken       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+>>>>>>> Stashed changes
 
   hrManagers HrManager[]
 

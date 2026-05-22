@@ -1,14 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, Length } from 'class-validator';
+import { IsNotEmpty, IsString, Matches } from 'class-validator';
 
 export class CompanyOtpVerifyDto {
   @ApiProperty({ description: '로그인 1단계에서 발급된 임시 토큰' })
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: '임시 토큰을 입력해주세요.' })
   tempToken!: string;
 
-  @ApiProperty({ example: '123456', description: '6자리 OTP 코드' })
+  @ApiProperty({ example: '123456', description: 'OTP 코드 (숫자 6자리)' })
   @IsString()
-  @Length(6, 6, { message: 'OTP 코드는 6자리여야 합니다.' })
+  @Matches(/^\d{6}$/, { message: 'OTP 코드는 숫자 6자리여야 합니다.' })
   otpCode!: string;
 }

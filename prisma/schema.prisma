@@ -11,27 +11,22 @@ datasource db {
 }
 
 // =========================
-// Enums
-// =========================
-enum UserRole {
-  APPLICANT
-  COMPANY
-  HR_MANAGER
-}
-
-// =========================
 // Auth / User Models
 // =========================
 
 // 지원자 (개인 회원)
 model Applicant {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  password     String
-  name         String
-  refreshToken String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String   @id @default(uuid())
+  email            String   @unique
+  password         String
+  name             String
+  refreshToken     String?
+  isEmailVerified  Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  consents    Consent[]
+  employments Employment[]
 
   @@map("applicants")
 }
@@ -44,8 +39,11 @@ model Company {
   password       String
   companyName    String
   businessNumber String   @unique
+  phone          String
   companyCode    String?  @unique // HR 매니저 로그인 시 사용
-  refreshToken  String?
+  isVerified     Boolean  @default(false)
+  isPaid         Boolean  @default(false)
+  refreshToken   String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 =======
@@ -65,7 +63,9 @@ model Company {
   updatedAt          DateTime @updatedAt
 >>>>>>> Stashed changes
 
-  hrManagers HrManager[]
+  hrManagers  HrManager[]
+  consents    Consent[]
+  employments Employment[]
 
   @@map("companies")
 }
@@ -74,7 +74,7 @@ model Company {
 model HrManager {
   id           String   @id @default(uuid())
   phone        String   @unique
-  name         String?
+  name         String
   refreshToken String?
   companyId    String
   company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -82,4 +82,76 @@ model HrManager {
   updatedAt    DateTime @updatedAt
 
   @@map("hr_managers")
+}
+
+// 이메일 인증 (지원자 회원가입 후 이메일 인증)
+model EmailVerification {
+  id        String   @id @default(uuid())
+  email     String
+  code      String
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("email_verifications")
+}
+
+// OTP 인증 (기업 CEO 로그인 2단계)
+model OtpVerification {
+  id        String   @id @default(uuid())
+  phone     String
+  code      String
+  expiresAt DateTime
+  failCount Int      @default(0)
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("otp_verifications")
+}
+
+// =========================
+// Consent Model
+// =========================
+
+// 동의 (지원자 ↔ 기업)
+model Consent {
+  id            String    @id @default(uuid())
+  applicantId   String
+  companyId     String
+  step1         Boolean   @default(false)
+  step1AgreedAt DateTime?
+  step2         Boolean   @default(false)
+  step2AgreedAt DateTime?
+  agreedTerms   Boolean   @default(false)
+  status        String    @default("pending")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  applicant Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("consents")
+}
+
+// =========================
+// Employment Model
+// =========================
+
+// 재직/퇴직 확인 (지원자 ↔ 기업)
+model Employment {
+  id              String    @id @default(uuid())
+  applicantId     String
+  companyId       String
+  resignationDate DateTime
+  reason          String?
+  status          String    @default("pending")
+  confirmed       Boolean   @default(false)
+  confirmedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  applicant Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("employments")
 }

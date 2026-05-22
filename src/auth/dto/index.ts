@@ -7,3 +7,4 @@ export { HrLoginDto } from './hr-login.dto';
 export { HrRegisterDto } from './hr-register.dto';
 export { HrOtpVerifyDto } from './hr-otp-verify.dto';
 export { RefreshTokenDto } from './refresh-token.dto';
+export { VerifyEmailDto } from './verify-email.dto';

@@ -138,5 +138,59 @@ model Employment {
   applicant Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
   company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  evaluationLink EvaluationLink?
+  selfEvaluation SelfEvaluation?
+  ceoEvaluation  CeoEvaluation?
+
   @@map("employments")
+}
+
+// =========================
+// Evaluation Models
+// =========================
+
+// 1회성 평가 링크
+model EvaluationLink {
+  id           String   @id @default(uuid())
+  employmentId String   @unique
+  token        String   @unique
+  status       String   @default("pending") // pending | used | expired
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  employment Employment @relation(fields: [employmentId], references: [id], onDelete: Cascade)
+
+  @@map("evaluation_links")
+}
+
+// 직원 자기 평가
+model SelfEvaluation {
+  id           String   @id @default(uuid())
+  employmentId String   @unique
+  score        Int
+  submittedAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  employment    Employment    @relation(fields: [employmentId], references: [id], onDelete: Cascade)
+  ceoEvaluation CeoEvaluation?
+
+  @@map("self_evaluations")
+}
+
+// 대표 검증 평가
+model CeoEvaluation {
+  id               String    @id @default(uuid())
+  employmentId     String    @unique
+  selfEvaluationId String    @unique
+  score            Int?
+  deadlineAt       DateTime
+  submittedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  employment     Employment     @relation(fields: [employmentId], references: [id], onDelete: Cascade)
+  selfEvaluation SelfEvaluation @relation(fields: [selfEvaluationId], references: [id], onDelete: Cascade)
+
+  @@map("ceo_evaluations")
 }

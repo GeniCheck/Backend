@@ -16,7 +16,7 @@ export class EvaluationService {
     private readonly linkService: LinkService,
   ) {}
 
-  // 직원: 자기 평가 제출
+  // 직원: 자기 평가 제출 (선언별)
   async submitSelf(token: string, dto: SelfEvaluationDto): Promise<unknown> {
     const { employmentId } = await this.linkService.validate(token);
 
@@ -35,7 +35,7 @@ export class EvaluationService {
       });
     }
 
-    const alreadySubmitted = await this.prisma.selfEvaluation.findUnique({
+    const alreadySubmitted = await this.prisma.selfEvaluationScore.findFirst({
       where: { employmentId },
     });
     if (alreadySubmitted) {
@@ -46,31 +46,47 @@ export class EvaluationService {
       });
     }
 
-    const selfEvaluation = await this.prisma.selfEvaluation.create({
-      data: { employmentId, score: dto.score },
+    const now = new Date();
+    const evaluationCloseAt = new Date(now);
+    evaluationCloseAt.setDate(evaluationCloseAt.getDate() + 15);
+
+    // 선언별 자기 평가 점수 일괄 생성
+    await this.prisma.selfEvaluationScore.createMany({
+      data: dto.scores.map((item) => ({
+        answerId: item.answerId,
+        employmentId,
+        score: item.score,
+      })),
     });
 
-    const deadlineAt = new Date(selfEvaluation.submittedAt);
-    deadlineAt.setDate(deadlineAt.getDate() + 15);
-
-    await this.prisma.ceoEvaluation.create({
-      data: {
+    // 선언별 CEO 검증 점수 레코드 미리 생성 (score null 상태)
+    await this.prisma.ceoEvaluationScore.createMany({
+      data: dto.scores.map((item) => ({
+        answerId: item.answerId,
         employmentId,
-        selfEvaluationId: selfEvaluation.id,
-        deadlineAt,
+      })),
+    });
+
+    // 골든타임 시작 기록
+    await this.prisma.employment.update({
+      where: { id: employmentId },
+      data: {
+        evaluationOpenAt: now,
+        evaluationCloseAt,
       },
     });
 
+    // 링크 즉시 만료
     await this.linkService.invalidate(token);
     await this.prisma.evaluationLink.update({
       where: { token },
       data: { status: 'used' },
     });
 
-    return { submittedAt: selfEvaluation.submittedAt, deadlineAt };
+    return { submittedAt: now, evaluationCloseAt };
   }
 
-  // 대표: CEO 검증 점수 입력
+  // 대표: CEO 검증 점수 입력 (선언별) + 재고용 의향
   async submitCeo(employmentId: string, dto: CeoEvaluationDto, companyId: string): Promise<unknown> {
     const employment = await this.prisma.employment.findUnique({
       where: { id: employmentId },
@@ -81,15 +97,11 @@ export class EvaluationService {
     if (employment.companyId !== companyId) {
       throw new ForbiddenException('해당 직원에 대한 권한이 없습니다.');
     }
-
-    const ceoEvaluation = await this.prisma.ceoEvaluation.findUnique({
-      where: { employmentId },
-    });
-    if (!ceoEvaluation) {
+    if (!employment.evaluationOpenAt) {
       throw new NotFoundException('직원이 아직 자기 평가를 제출하지 않았습니다.');
     }
 
-    if (new Date() > ceoEvaluation.deadlineAt) {
+    if (employment.windowClosed || (employment.evaluationCloseAt && new Date() > employment.evaluationCloseAt)) {
       throw new GoneException({
         success: false,
         code: 'EVALUATION_EXPIRED',
@@ -97,23 +109,54 @@ export class EvaluationService {
       });
     }
 
-    if (ceoEvaluation.submittedAt !== null) {
+    const alreadySubmitted = await this.prisma.ceoEvaluationScore.findFirst({
+      where: { employmentId, submittedAt: { not: null } },
+    });
+    if (alreadySubmitted) {
       throw new ConflictException('이미 검증 점수를 입력했습니다.');
     }
 
-    const updated = await this.prisma.ceoEvaluation.update({
-      where: { employmentId },
-      data: { score: dto.score, submittedAt: new Date() },
+    const now = new Date();
+
+    // 선언별 검증 점수 일괄 업데이트
+    await Promise.all(
+      dto.scores.map((item) =>
+        this.prisma.ceoEvaluationScore.update({
+          where: { answerId: item.answerId },
+          data: { score: item.score, submittedAt: now },
+        }),
+      ),
+    );
+
+    // 재고용 의향 + 골든타임 종료 처리
+    await this.prisma.employment.update({
+      where: { id: employmentId },
+      data: {
+        rehireIntent: dto.rehireIntent,
+        windowClosed: true,
+      },
     });
 
-    return { score: updated.score, submittedAt: updated.submittedAt };
+    return { submittedAt: now, rehireIntent: dto.rehireIntent };
   }
 
-  // 대표: 선언 vs 검증 결과 조회
+  // 대표: 선언 vs 검증 대조 결과 조회
   async getResult(employmentId: string, companyId: string): Promise<unknown> {
     const employment = await this.prisma.employment.findUnique({
       where: { id: employmentId },
-      include: { selfEvaluation: true, ceoEvaluation: true },
+      include: {
+        declarationQuestions: {
+          include: {
+            answer: {
+              include: {
+                selfEvaluationScore: true,
+                ceoEvaluationScore: true,
+              },
+            },
+          },
+          orderBy: { order: 'asc' },
+        },
+      },
     });
     if (!employment) {
       throw new NotFoundException('퇴사 기록을 찾을 수 없습니다.');
@@ -122,18 +165,20 @@ export class EvaluationService {
       throw new ForbiddenException('해당 직원에 대한 권한이 없습니다.');
     }
 
+    const declarations = employment.declarationQuestions.map((q) => ({
+      question: q.content,
+      answer: q.answer?.content ?? null,
+      selfScore: q.answer?.selfEvaluationScore?.score ?? null,
+      ceoScore: q.answer?.ceoEvaluationScore?.score ?? null,
+    }));
+
     return {
       employmentId,
-      selfEvaluation: employment.selfEvaluation
-        ? { score: employment.selfEvaluation.score, submittedAt: employment.selfEvaluation.submittedAt }
-        : null,
-      ceoEvaluation: employment.ceoEvaluation
-        ? {
-            score: employment.ceoEvaluation.score,
-            deadlineAt: employment.ceoEvaluation.deadlineAt,
-            submittedAt: employment.ceoEvaluation.submittedAt,
-          }
-        : null,
+      evaluationOpenAt: employment.evaluationOpenAt,
+      evaluationCloseAt: employment.evaluationCloseAt,
+      windowClosed: employment.windowClosed,
+      rehireIntent: employment.rehireIntent,
+      declarations,
     };
   }
 }

@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -53,7 +52,7 @@ export class EmploymentService {
       },
     });
 
-    // TODO: 직원 이메일로 평가 링크 발송 (applicant.email, token)
+    // TODO: 직원 이메일로 평가 링크 발송 (applicant.email, token) — EmailService export 후 연동 예정
 
     return {
       employmentId: employment.id,

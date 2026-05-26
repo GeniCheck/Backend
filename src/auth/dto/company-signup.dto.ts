@@ -53,8 +53,6 @@ export class CompanySignupDto {
     message: '사업자등록번호는 000-00-00000 형식이어야 합니다.',
   })
   businessNumber!: string;
-<<<<<<< Updated upstream
-=======
 
   @ApiProperty({
     example: '010-1234-5678',
@@ -75,5 +73,4 @@ export class CompanySignupDto {
   @IsString()
   @Matches(/^\d{8}$/, { message: '개업일자는 YYYYMMDD 형식이어야 합니다.' })
   startDate!: string;
->>>>>>> Stashed changes
 }

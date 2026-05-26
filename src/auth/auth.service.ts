@@ -216,13 +216,10 @@ export class AuthService {
         password: hashedPassword,
         companyName: dto.companyName,
         businessNumber: normalizedBizNumber,
-<<<<<<< Updated upstream
-=======
         representativeName: dto.representativeName,
         startDate: dto.startDate,
         phone: dto.phone,
         companyCode,
->>>>>>> Stashed changes
       },
     });
 
@@ -804,9 +801,6 @@ export class AuthService {
         break;
     }
   }
-<<<<<<< Updated upstream
-=======
-
   private generateSixDigitCode(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
@@ -825,5 +819,4 @@ export class AuthService {
   private preHashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
   }
->>>>>>> Stashed changes
 }

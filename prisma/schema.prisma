@@ -41,7 +41,7 @@ model Company {
   representativeName String
   startDate          String   // 개업일자 YYYYMMDD
   phone              String
-  companyCode        String?  @unique // HR 매니저 로그인 시 사용
+  companyCode        String?  @unique
   isVerified         Boolean  @default(false)
   isPaid             Boolean  @default(false)
   refreshToken       String?
@@ -69,7 +69,7 @@ model HrManager {
   @@map("hr_managers")
 }
 
-// 이메일 인증 (지원자 회원가입 후 이메일 인증)
+// 이메일 인증
 model EmailVerification {
   id        String   @id @default(uuid())
   email     String
@@ -98,7 +98,6 @@ model OtpVerification {
 // Consent Model
 // =========================
 
-// 동의 (지원자 ↔ 기업)
 model Consent {
   id            String    @id @default(uuid())
   applicantId   String
@@ -122,21 +121,106 @@ model Consent {
 // Employment Model
 // =========================
 
-// 재직/퇴직 확인 (지원자 ↔ 기업)
 model Employment {
-  id              String    @id @default(uuid())
-  applicantId     String
-  companyId       String
-  resignationDate DateTime
-  reason          String?
-  status          String    @default("pending")
-  confirmed       Boolean   @default(false)
-  confirmedAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                 String    @id @default(uuid())
+  applicantId        String
+  companyId          String
+  resignationDate    DateTime
+  reason             String?
+  status             String    @default("pending")
+  confirmed          Boolean   @default(false)
+  confirmedAt        DateTime?
+  evaluationOpenAt   DateTime?  // 직원 자기 평가 완료 시각 (골든타임 시작)
+  evaluationCloseAt  DateTime?  // evaluationOpenAt + 15일
+  windowClosed       Boolean   @default(false)
+  rehireIntent       String?    // YES | HOLD | NO (대표만 입력)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  applicant Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
-  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  applicant            Applicant             @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  company              Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  evaluationLink       EvaluationLink?
+  declarationQuestions DeclarationQuestion[]
+  selfEvaluationScores SelfEvaluationScore[]
+  ceoEvaluationScores  CeoEvaluationScore[]
 
   @@map("employments")
+}
+
+// =========================
+// Evaluation Models
+// =========================
+
+// 1회성 평가 링크
+model EvaluationLink {
+  id           String   @id @default(uuid())
+  employmentId String   @unique
+  token        String   @unique
+  status       String   @default("pending") // pending | used | expired
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  employment Employment @relation(fields: [employmentId], references: [id], onDelete: Cascade)
+
+  @@map("evaluation_links")
+}
+
+// 대표가 입사 시 만든 질문
+model DeclarationQuestion {
+  id           String   @id @default(uuid())
+  employmentId String
+  content      String
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  employment Employment        @relation(fields: [employmentId], references: [id], onDelete: Cascade)
+  answer     DeclarationAnswer?
+
+  @@map("declaration_questions")
+}
+
+// 직원이 입력한 답변 (자기 선언)
+model DeclarationAnswer {
+  id         String   @id @default(uuid())
+  questionId String   @unique
+  content    String
+  createdAt  DateTime @default(now())
+
+  question          DeclarationQuestion  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selfEvaluationScore SelfEvaluationScore?
+  ceoEvaluationScore  CeoEvaluationScore?
+
+  @@map("declaration_answers")
+}
+
+// 직원 자기 평가 점수 (선언별, 서술형 필드 없음)
+model SelfEvaluationScore {
+  id           String   @id @default(uuid())
+  answerId     String   @unique
+  employmentId String
+  score        Int      // 1~10
+  submittedAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  answer     DeclarationAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  employment Employment        @relation(fields: [employmentId], references: [id], onDelete: Cascade)
+
+  @@map("self_evaluation_scores")
+}
+
+// 대표 검증 점수 (선언별, 서술형 필드 없음)
+model CeoEvaluationScore {
+  id           String    @id @default(uuid())
+  answerId     String    @unique
+  employmentId String
+  score        Int?      // 1~10
+  submittedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  answer     DeclarationAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  employment Employment        @relation(fields: [employmentId], references: [id], onDelete: Cascade)
+
+  @@map("ceo_evaluation_scores")
 }

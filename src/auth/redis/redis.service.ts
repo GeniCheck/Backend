@@ -33,7 +33,14 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   // 블랙리스트 여부 확인
   async isBlacklisted(token: string): Promise<boolean> {
-    const result = await this.client.get(`bl:${token}`);
-    return result !== null;
+    try {
+      const result = await this.client.get(`bl:${token}`);
+      return result !== null;
+    } catch {
+      // Redis 연결 실패 시 블랙리스트 확인 불가 — 보안보다 가용성 우선 (개발 환경)
+      // 운영 환경에서는 Redis 필수
+      this.logger.error('Redis 블랙리스트 확인 실패 — Redis 연결 상태를 확인하세요.');
+      return false;
+    }
   }
 }

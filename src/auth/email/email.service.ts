@@ -109,4 +109,44 @@ export class EmailService {
       throw error;
     }
   }
+
+  async sendEvaluationLinkEmail(to: string, token: string): Promise<void> {
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3001';
+    const evaluationUrl = `${frontendUrl}/evaluate/${token}`;
+    const subject = '[GeniCheck] 평가 링크가 도착했습니다';
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #333;">퇴직 후 평가 링크 안내</h2>
+        <p>안녕하세요. 아래 링크를 통해 평가를 진행해주세요.</p>
+        <div style="margin: 24px 0;">
+          <a href="${evaluationUrl}" style="
+            display: inline-block;
+            background: #4F46E5;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: bold;
+          ">평가 시작하기</a>
+        </div>
+        <p style="color: #888; font-size: 13px;">
+          링크는 <strong>7일</strong> 동안 유효합니다.<br/>
+          본인이 요청하지 않은 경우 이 이메일을 무시하세요.
+        </p>
+      </div>
+    `;
+
+    try {
+      await this.transporter.sendMail({
+        from: this.fromAddress,
+        to,
+        subject,
+        html,
+      });
+      this.logger.log(`평가 링크 이메일 발송 완료: ${to}`);
+    } catch (error) {
+      this.logger.error(`평가 링크 이메일 발송 실패: ${to}`, error);
+      throw error;
+    }
+  }
 }

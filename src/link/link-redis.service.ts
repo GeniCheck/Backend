@@ -21,14 +21,27 @@ export class LinkRedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async set(key: string, value: string, ttlSeconds: number): Promise<void> {
-    await this.client.set(key, value, 'EX', ttlSeconds);
+    try {
+      await this.client.set(key, value, 'EX', ttlSeconds);
+    } catch {
+      this.logger.error('LinkRedis set 실패 — Redis 연결 상태를 확인하세요.');
+    }
   }
 
   async get(key: string): Promise<string | null> {
-    return this.client.get(key);
+    try {
+      return await this.client.get(key);
+    } catch {
+      this.logger.error('LinkRedis get 실패 — Redis 연결 상태를 확인하세요.');
+      return null;
+    }
   }
 
   async del(key: string): Promise<void> {
-    await this.client.del(key);
+    try {
+      await this.client.del(key);
+    } catch {
+      this.logger.error('LinkRedis del 실패 — Redis 연결 상태를 확인하세요.');
+    }
   }
 }

@@ -73,4 +73,9 @@ export class CompanySignupDto {
   @IsString()
   @Matches(/^\d{8}$/, { message: '개업일자는 YYYYMMDD 형식이어야 합니다.' })
   startDate!: string;
+
+  @ApiProperty({ description: '대표폰 OTP 인증 완료 후 발급되는 회원가입 인증 토큰' })
+  @IsString()
+  @IsNotEmpty({ message: '대표폰 OTP 인증 토큰을 입력해주세요.' })
+  phoneVerificationToken!: string;
 }

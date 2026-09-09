@@ -14,7 +14,7 @@ RUN npm install --legacy-peer-deps
 COPY . .
 
 # Generate Prisma Client & Build TypeScript code
-RUN npx prisma generate
+RUN npx prisma@5.10.0 generate
 RUN npm run build
 
 # Step 2: Production Runner Stage
@@ -36,4 +36,4 @@ COPY --from=builder /app/prisma ./prisma
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+CMD ["sh", "-c", "npx prisma@5.10.0 migrate deploy && node dist/main.js"]

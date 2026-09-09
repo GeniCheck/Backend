@@ -1,5 +1,4 @@
 name: GeniCheck Backend CI/CD Pipeline
-# CI/CD smoke test marker
 
 on:
   push:
@@ -26,10 +25,10 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
 
       - name: Generate Prisma Client
-        run: npx prisma generate
+        run: ./node_modules/.bin/prisma generate
 
       - name: Build Project
         run: npm run build

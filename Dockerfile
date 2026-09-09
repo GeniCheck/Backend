@@ -5,17 +5,19 @@ RUN apk add --no-cache openssl
 
 WORKDIR /app
 
-# Copy package files & prisma schema
+# Copy package files
 COPY package*.json ./
-COPY prisma ./prisma/
 
 # Install dependencies
 RUN npm ci --legacy-peer-deps
 
+# Copy Prisma schema and application source
+COPY prisma ./prisma/
+
 # Copy source code
 COPY . .
 
-# Generate Prisma Client using locally installed Prisma 5.10.0
+# Generate Prisma Client using the lockfile-pinned local Prisma CLI
 RUN ./node_modules/.bin/prisma generate
 RUN npm run build
 

@@ -26,12 +26,14 @@ ENV NODE_ENV=production
 
 # Copy package files & install production dependencies
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm install --omit=dev --legacy-peer-deps
 
 # Copy built dist folder and Prisma assets from builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 COPY --from=builder /app/prisma ./prisma
 
 EXPOSE 3000

@@ -1,4 +1,5 @@
 name: GeniCheck Backend CI/CD Pipeline
+# CI/CD smoke test marker
 
 on:
   push:

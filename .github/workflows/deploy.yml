@@ -1,0 +1,57 @@
+name: GeniCheck Backend CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+jobs:
+  # -------------------------------------------------------------
+  # 1. CI (Continuous Integration): 빌드 및 코드 검증
+  # -------------------------------------------------------------
+  ci:
+    name: Build & Test (CI)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Build Project
+        run: npm run build
+
+  # -------------------------------------------------------------
+  # 2. CD (Continuous Deployment): OCI Ubuntu Server 자동 배포
+  # -------------------------------------------------------------
+  cd:
+    name: Deploy to OCI Ubuntu Server (CD)
+    needs: ci
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to OCI via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USERNAME || 'ubuntu' }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/Backend
+            git pull origin ${{ github.ref_name }}
+            docker compose -f docker-compose.prod.yml down
+            docker compose -f docker-compose.prod.yml up -d --build
+            docker image prune -f

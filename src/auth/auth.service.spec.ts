@@ -241,13 +241,13 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     prismaMock.hrManager.findUnique.mockResolvedValue({
       id: "hr-1",
       companyId: "comp-1",
+      company: { email: "ceo@company.com" },
     });
     prismaMock.otpVerification.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.otpVerification.create.mockResolvedValue({ id: "otp-login-1" });
 
     const res = await service.hrLogin({
       phone: "010-9999-8888",
-      companyCode: "COMP1234",
     });
 
     expect(res).toEqual({ tempToken: "mock-temp-token" });

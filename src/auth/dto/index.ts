@@ -5,6 +5,7 @@ export { CompanyLoginDto } from './company-login.dto';
 export { CompanyOtpVerifyDto } from './company-otp-verify.dto';
 export { CompanySignupOtpRequestDto } from './company-signup-otp-request.dto';
 export { CompanySignupOtpVerifyDto } from './company-signup-otp-verify.dto';
+export { CompanyBusinessVerifyDto } from './company-business-verify.dto';
 export { HrLoginDto } from './hr-login.dto';
 export { HrRegisterDto } from './hr-register.dto';
 export { HrOtpVerifyDto } from './hr-otp-verify.dto';

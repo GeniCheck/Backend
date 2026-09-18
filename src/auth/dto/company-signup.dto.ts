@@ -78,4 +78,9 @@ export class CompanySignupDto {
   @IsString()
   @IsNotEmpty({ message: '대표 이메일 인증 토큰을 입력해주세요.' })
   emailVerificationToken!: string;
+
+  @ApiProperty({ description: '사업자 정보 인증 완료 후 발급되는 토큰' })
+  @IsString()
+  @IsNotEmpty()
+  businessVerificationToken!: string;
 }

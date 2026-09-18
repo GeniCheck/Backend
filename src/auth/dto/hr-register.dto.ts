@@ -2,6 +2,11 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsString, Matches } from 'class-validator';
 
 export class HrRegisterDto {
+  @ApiProperty({ example: 'COMP001', description: '가입할 회사 코드' })
+  @IsString()
+  @IsNotEmpty()
+  companyCode?: string;
+
   @ApiProperty({ example: '홍길동', description: 'HR 담당자 이름' })
   @IsString()
   @IsNotEmpty({ message: '이름을 입력해주세요.' })

@@ -17,6 +17,7 @@ import {
   CompanyOtpVerifyDto,
   CompanySignupOtpRequestDto,
   CompanySignupOtpVerifyDto,
+  CompanyBusinessVerifyDto,
   HrLoginDto,
   HrRegisterDto,
   HrOtpVerifyDto,
@@ -74,18 +75,11 @@ export class AuthService {
       // 이메일 발송 실패 시 로그는 EmailService 내부에서 처리
     }
 
-    const tokens = await this.generateTokens({
-      sub: applicant.id,
-      role: "APPLICANT",
-    });
-
-    await this.updateRefreshToken(
-      "APPLICANT",
-      applicant.id,
-      tokens.refreshToken,
-    );
-
-    return tokens;
+    return {
+      id: applicant.id,
+      email: applicant.email,
+      isEmailVerified: applicant.isEmailVerified,
+    };
   }
 
   // ===========================
@@ -136,6 +130,10 @@ export class AuthService {
       );
     }
 
+    if (!applicant.isEmailVerified) {
+      throw new UnauthorizedException("가입 이메일 인증을 먼저 완료해주세요.");
+    }
+
     const isPasswordValid = await bcrypt.compare(
       dto.password,
       applicant.password,
@@ -163,7 +161,62 @@ export class AuthService {
   // ===========================
   // 기업 회원가입
   // ===========================
+  async verifyCompanyBusiness(dto: CompanyBusinessVerifyDto) {
+    const normalizedBizNumber = dto.businessNumber.replace(/-/g, "");
+    const existingBiz = await this.prisma.company.findUnique({
+      where: { businessNumber: normalizedBizNumber },
+    });
+    if (existingBiz) {
+      throw new ConflictException("이미 등록된 사업자등록번호입니다.");
+    }
+
+    await this.validateBusinessRegistration(
+      normalizedBizNumber,
+      dto.representativeName,
+      dto.startDate,
+    );
+
+    const businessVerificationToken = this.jwtService.sign(
+      {
+        purpose: "company_business",
+        businessNumber: normalizedBizNumber,
+        representativeName: dto.representativeName,
+        startDate: dto.startDate,
+      },
+      {
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
+        expiresIn: "10m",
+      },
+    );
+
+    return { isVerified: true, businessVerificationToken };
+  }
+
   async companySignup(dto: CompanySignupDto) {
+    let businessPayload: {
+      purpose: string;
+      businessNumber: string;
+      representativeName: string;
+      startDate: string;
+    };
+    try {
+      businessPayload = this.jwtService.verify(dto.businessVerificationToken, {
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
+      });
+    } catch {
+      throw new UnauthorizedException("사업자 정보 인증 토큰이 유효하지 않습니다.");
+    }
+
+    const normalizedBizNumber = dto.businessNumber.replace(/-/g, "");
+    if (
+      businessPayload.purpose !== "company_business" ||
+      businessPayload.businessNumber !== normalizedBizNumber ||
+      businessPayload.representativeName !== dto.representativeName ||
+      businessPayload.startDate !== dto.startDate
+    ) {
+      throw new BadRequestException("사업자 인증 정보가 가입 정보와 일치하지 않습니다.");
+    }
+
     let signupOtpPayload: { purpose: string; email: string };
     try {
       signupOtpPayload = this.jwtService.verify(dto.emailVerificationToken, {
@@ -191,7 +244,6 @@ export class AuthService {
       throw new ConflictException("이미 등록된 이메일입니다.");
     }
 
-    const normalizedBizNumber = dto.businessNumber.replace(/-/g, "");
     const existingBiz = await this.prisma.company.findUnique({
       where: { businessNumber: normalizedBizNumber },
     });
@@ -428,7 +480,7 @@ export class AuthService {
   // ===========================
   // HR 매니저 등록 Step1 (회사 대표 이메일 인증 코드 발송)
   // ===========================
-  async hrRegister(dto: HrRegisterDto, companyId: string) {
+  async hrRegister(dto: HrRegisterDto, legacyCompanyId?: string) {
     // 1. 전화번호 중복 확인
     const existingHr = await this.prisma.hrManager.findUnique({
       where: { phone: dto.phone },
@@ -438,9 +490,15 @@ export class AuthService {
     }
 
     // 2. 기업 조회 (대표 이메일 확보)
-    const company = await this.prisma.company.findUnique({
-      where: { id: companyId },
-    });
+    const company = dto.companyCode
+      ? await this.prisma.company.findUnique({
+          where: { companyCode: dto.companyCode },
+        })
+      : legacyCompanyId
+        ? await this.prisma.company.findUnique({
+            where: { id: legacyCompanyId },
+          })
+        : null;
     if (!company) {
       throw new UnauthorizedException("기업 정보를 찾을 수 없습니다.");
     }
@@ -474,7 +532,7 @@ export class AuthService {
     // 6. 임시 토큰 발급 (5분, HR 정보 포함)
     const tempToken = this.jwtService.sign(
       {
-        sub: companyId,
+        sub: company.id,
         purpose: "hr_register",
         hrPhone: dto.phone,
         hrName: dto.name,
@@ -591,6 +649,48 @@ export class AuthService {
   // HR 매니저 로그인 Step1 (전화번호/기업코드 → OTP 발송)
   // ===========================
   async hrLogin(dto: HrLoginDto) {
+    const hrManager = await this.prisma.hrManager.findUnique({
+      where: { phone: dto.phone },
+      include: { company: { select: { email: true } } },
+    });
+    if (!hrManager) {
+      throw new UnauthorizedException("등록된 인사팀장 계정을 찾을 수 없습니다.");
+    }
+
+    const companyEmail = hrManager.company.email;
+    if (!companyEmail?.trim()) {
+      throw new BadRequestException("소속 회사의 공식 이메일이 등록되어 있지 않습니다.");
+    }
+
+    await this.prisma.otpVerification.updateMany({
+      where: { email: companyEmail, isUsed: false },
+      data: { isUsed: true },
+    });
+
+    const otpCode = this.generateSixDigitCode();
+    const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
+    await this.prisma.otpVerification.create({
+      data: { email: companyEmail, code: otpCode, expiresAt },
+    });
+
+    try {
+      await this.emailService.sendHrLoginEmail(companyEmail, otpCode);
+    } catch {
+      // EmailService에서 발송 오류를 기록합니다.
+    }
+
+    const tempToken = this.jwtService.sign(
+      { sub: hrManager.id, purpose: "hr_otp_verify" },
+      {
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
+        expiresIn: "5m",
+      },
+    );
+
+    return { tempToken };
+  }
+
+  async hrLoginLegacy(dto: HrLoginDto) {
     // 1. 기업 코드로 기업 조회
     const company = await this.prisma.company.findUnique({
       where: { companyCode: dto.companyCode },
@@ -817,7 +917,9 @@ export class AuthService {
   // ===========================
   // 회원가입 대표 OTP 요청·재요청
   // ===========================
-  async requestCompanySignupOtp(dto: CompanySignupOtpRequestDto) {
+  async requestCompanySignupOtp(
+    dto: CompanySignupOtpRequestDto & Record<string, unknown>,
+  ) {
     await this.prisma.otpVerification.updateMany({
       where: { email: dto.email, isUsed: false },
       data: { isUsed: true },
@@ -1100,6 +1202,51 @@ export class AuthService {
     throw new BadRequestException(
       "OTP 재발송에 사용할 수 없는 임시 토큰입니다.",
     );
+  }
+
+  private async validateBusinessRegistration(
+    businessNumber: string,
+    representativeName: string,
+    startDate: string,
+  ) {
+    const serviceKey = this.configService.get<string>("NTS_API_KEY") ?? "";
+
+    if (this.configService.get<string>("NODE_ENV") !== "production") {
+      return;
+    }
+
+    try {
+      const ntsRes = await fetch(
+        `https://api.odcloud.kr/api/nts-businessman/v1/validate?serviceKey=${encodeURIComponent(serviceKey)}&returnType=JSON`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            businesses: [
+              {
+                b_no: businessNumber,
+                p_nm: representativeName,
+                start_dt: startDate,
+              },
+            ],
+          }),
+        },
+      );
+
+      if (!ntsRes.ok) {
+        throw new BadRequestException("사업자 정보 확인 중 오류가 발생했습니다.");
+      }
+
+      const ntsData = (await ntsRes.json()) as {
+        data: Array<{ valid: string }>;
+      };
+      if (ntsData?.data?.[0]?.valid !== "01") {
+        throw new BadRequestException("사업자 정보가 일치하지 않습니다.");
+      }
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException("사업자 정보 확인 중 오류가 발생했습니다.");
+    }
   }
 
   private parseTtlToSeconds(ttl: string): number {

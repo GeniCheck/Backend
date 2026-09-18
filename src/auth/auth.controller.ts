@@ -153,6 +153,8 @@ export class AuthController {
   // ===========================
   @Post("hr/register")
   @HttpCode(HttpStatus.OK)
+  @ApiResponse({ status: 200, description: "Temporary token issued and verification code sent to the HR user's personal email" })
+  @ApiOperation({ summary: "HR signup - company code and personal email verification" })
   @ApiOperation({
     summary:
       "HR 매니저 등록 1단계 - 회사 대표 이메일 인증 코드 발송 (COMPANY 권한 필요)",
@@ -176,6 +178,8 @@ export class AuthController {
   // ===========================
   @Post("hr/register/verify")
   @HttpCode(HttpStatus.OK)
+  @ApiResponse({ status: 200, description: "Personal email verified and HR account created" })
+  @ApiOperation({ summary: "HR signup step 2 - verify personal email and create account" })
   @ApiOperation({
     summary:
       "HR 매니저 등록 2단계 - 대표 이메일 인증 코드 검증 및 HR 계정 생성 (COMPANY 권한 필요)",
@@ -195,6 +199,8 @@ export class AuthController {
   // ===========================
   @Post("hr/login")
   @HttpCode(HttpStatus.OK)
+  @ApiResponse({ status: 200, description: "Temporary token issued and verification code sent to the company's official email" })
+  @ApiOperation({ summary: "HR login step 1 - email/password, then company email verification" })
   @ApiOperation({
     summary:
       "HR 매니저 로그인 1단계 - 전화번호/기업코드 확인 후 대표 이메일 인증 코드 발송",
@@ -216,6 +222,8 @@ export class AuthController {
   // ===========================
   @Post("hr/otp/verify")
   @HttpCode(HttpStatus.OK)
+  @ApiResponse({ status: 200, description: "Company official email verified and access tokens issued" })
+  @ApiOperation({ summary: "HR login step 2 - verify company official email code" })
   @ApiOperation({
     summary: "HR 매니저 로그인 2단계 - 대표 이메일 인증 코드 검증 및 토큰 발급",
   })

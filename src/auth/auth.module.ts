@@ -6,7 +6,6 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { EmailService } from './email/email.service';
-import { SmsService } from './sms/sms.service';
 import { RedisService } from './redis/redis.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
@@ -26,7 +25,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, EmailService, SmsService, RedisService, JwtAuthGuard],
+  providers: [AuthService, JwtStrategy, EmailService, RedisService, JwtAuthGuard],
   exports: [AuthService, JwtModule, RedisService, JwtAuthGuard, EmailService],
 })
 export class AuthModule {}

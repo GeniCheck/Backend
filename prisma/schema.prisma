@@ -84,7 +84,8 @@ model EmailVerification {
 // OTP 인증 (기업 CEO 로그인 2단계)
 model OtpVerification {
   id        String   @id @default(uuid())
-  phone     String
+  phone     String?
+  email     String?
   code      String
   expiresAt DateTime
   failCount Int      @default(0)

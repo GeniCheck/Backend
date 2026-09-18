@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
-import { Transporter } from 'nodemailer';
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import * as nodemailer from "nodemailer";
+import { Transporter } from "nodemailer";
 
 @Injectable()
 export class EmailService {
@@ -10,21 +10,22 @@ export class EmailService {
   private readonly fromAddress: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.fromAddress = this.configService.get<string>('SMTP_FROM') ?? 'noreply@genicheck.com';
+    this.fromAddress =
+      this.configService.get<string>("SMTP_FROM") ?? "noreply@genicheck.com";
 
     this.transporter = nodemailer.createTransport({
-      host: this.configService.get<string>('SMTP_HOST'),
-      port: this.configService.get<number>('SMTP_PORT') ?? 587,
-      secure: this.configService.get<string>('SMTP_SECURE') === 'true',
+      host: this.configService.get<string>("SMTP_HOST"),
+      port: this.configService.get<number>("SMTP_PORT") ?? 587,
+      secure: this.configService.get<string>("SMTP_SECURE") === "true",
       auth: {
-        user: this.configService.get<string>('SMTP_USER'),
-        pass: this.configService.get<string>('SMTP_PASS'),
+        user: this.configService.get<string>("SMTP_USER"),
+        pass: this.configService.get<string>("SMTP_PASS"),
       },
     });
   }
 
   async sendVerificationEmail(to: string, code: string): Promise<void> {
-    const subject = '[GeniCheck] 이메일 인증 코드';
+    const subject = "[GeniCheck] 이메일 인증 코드";
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #333;">이메일 인증</h2>
@@ -65,13 +66,89 @@ export class EmailService {
     }
   }
 
-  /**
-   * CEO 2단계 로그인 OTP 발송
-   * TODO: SMS 서비스 연동 후 이 메서드를 SMS 발송으로 교체
-   *       현재는 SMS 미지원으로 이메일 폴백 처리
-   */
+  async sendHrRegistrationEmail(to: string, code: string): Promise<void> {
+    const subject = "[GeniCheck] 인사팀장 회원가입 인증번호";
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #333;">인사팀장 회원가입 인증번호</h2>
+        <p>인사팀장 회원가입을 진행하려면 아래 인증번호를 입력해주세요.</p>
+        <div style="
+          background: #f4f4f4;
+          border-radius: 8px;
+          padding: 20px;
+          text-align: center;
+          font-size: 32px;
+          font-weight: bold;
+          letter-spacing: 8px;
+          color: #222;
+          margin: 24px 0;
+        ">
+          ${code}
+        </div>
+        <p style="color: #888; font-size: 13px;">
+          인증번호는 <strong>3분</strong> 후 만료됩니다.<br/>
+          본인이 요청하지 않았다면 이 메일을 무시해주세요.
+        </p>
+      </div>
+    `;
+
+    try {
+      await this.transporter.sendMail({
+        from: this.fromAddress,
+        to,
+        subject,
+        html,
+      });
+      this.logger.log(`HR 가입 인증 이메일 발송 완료: ${to}`);
+    } catch (error) {
+      this.logger.error(`HR 가입 인증 이메일 발송 실패: ${to}`, error);
+      throw error;
+    }
+  }
+
+  async sendHrLoginEmail(to: string, code: string): Promise<void> {
+    const subject = "[GeniCheck] 인사팀장 로그인 인증번호";
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #333;">인사팀장 로그인 인증번호</h2>
+        <p>로그인을 계속하려면 아래 인증번호를 입력해주세요.</p>
+        <div style="
+          background: #f4f4f4;
+          border-radius: 8px;
+          padding: 20px;
+          text-align: center;
+          font-size: 32px;
+          font-weight: bold;
+          letter-spacing: 8px;
+          color: #222;
+          margin: 24px 0;
+        ">
+          ${code}
+        </div>
+        <p style="color: #888; font-size: 13px;">
+          인증번호는 <strong>3분</strong> 후 만료됩니다.<br/>
+          본인이 요청하지 않았다면 이 메일을 무시해주세요.
+        </p>
+      </div>
+    `;
+
+    try {
+      await this.transporter.sendMail({
+        from: this.fromAddress,
+        to,
+        subject,
+        html,
+      });
+      this.logger.log(`HR 로그인 인증 이메일 발송 완료: ${to}`);
+    } catch (error) {
+      this.logger.error(`HR 로그인 인증 이메일 발송 실패: ${to}`, error);
+      throw error;
+    }
+  }
+
+  /** CEO 2단계 로그인 이메일 인증 코드 발송 */
   async sendOtpEmail(to: string, code: string): Promise<void> {
-    const subject = '[GeniCheck] OTP 인증 코드';
+    const subject = "[GeniCheck] OTP 인증 코드";
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #333;">CEO 로그인 OTP 인증</h2>
@@ -111,9 +188,9 @@ export class EmailService {
   }
 
   async sendEvaluationLinkEmail(to: string, token: string): Promise<void> {
-    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3001';
+    const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3001";
     const evaluationUrl = `${frontendUrl}/evaluate/${token}`;
-    const subject = '[GeniCheck] 평가 링크가 도착했습니다';
+    const subject = "[GeniCheck] 평가 링크가 도착했습니다";
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #333;">퇴직 후 평가 링크 안내</h2>

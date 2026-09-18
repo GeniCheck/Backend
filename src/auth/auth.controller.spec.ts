@@ -17,7 +17,7 @@ describe('AuthController (전하은 담당 API 매핑 검증)', () => {
       requestCompanySignupOtp: jest.fn().mockResolvedValue({ message: 'OTP가 발송되었습니다.' }),
       verifyCompanySignupOtp: jest.fn().mockResolvedValue({
         isVerified: true,
-        phoneVerificationToken: 'mock-phone-verification-token',
+        emailVerificationToken: 'mock-email-verification-token',
       }),
       hrRegister: jest.fn(),
       hrRegisterVerify: jest.fn(),
@@ -50,7 +50,7 @@ describe('AuthController (전하은 담당 API 매핑 검증)', () => {
     const res = await controller.verifyCompanySignupOtp(dto);
     expect(res).toEqual({
       isVerified: true,
-      phoneVerificationToken: 'mock-phone-verification-token',
+      emailVerificationToken: 'mock-email-verification-token',
     });
     expect(authServiceMock.verifyCompanySignupOtp).toHaveBeenCalledWith(dto);
   });

@@ -3,12 +3,12 @@ import {
   ConflictException,
   Injectable,
   UnauthorizedException,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
-import { createHash, randomUUID } from 'crypto';
-import { PrismaService } from '../prisma/prisma.service';
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { JwtService } from "@nestjs/jwt";
+import * as bcrypt from "bcrypt";
+import { createHash, randomUUID } from "crypto";
+import { PrismaService } from "../prisma/prisma.service";
 import {
   ApplicantSignupDto,
   ApplicantLoginDto,
@@ -23,11 +23,10 @@ import {
   RefreshTokenDto,
   VerifyEmailDto,
   ResendOtpDto,
-} from './dto';
-import { JwtPayload } from './strategies/jwt.strategy';
-import { EmailService } from './email/email.service';
-import { SmsService } from './sms/sms.service';
-import { RedisService } from './redis/redis.service';
+} from "./dto";
+import { JwtPayload } from "./strategies/jwt.strategy";
+import { EmailService } from "./email/email.service";
+import { RedisService } from "./redis/redis.service";
 
 @Injectable()
 export class AuthService {
@@ -36,7 +35,6 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly emailService: EmailService,
-    private readonly smsService: SmsService,
     private readonly redisService: RedisService,
   ) {}
 
@@ -48,7 +46,7 @@ export class AuthService {
       where: { email: dto.email },
     });
     if (existing) {
-      throw new ConflictException('이미 등록된 이메일입니다.');
+      throw new ConflictException("이미 등록된 이메일입니다.");
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
@@ -78,10 +76,14 @@ export class AuthService {
 
     const tokens = await this.generateTokens({
       sub: applicant.id,
-      role: 'APPLICANT',
+      role: "APPLICANT",
     });
 
-    await this.updateRefreshToken('APPLICANT', applicant.id, tokens.refreshToken);
+    await this.updateRefreshToken(
+      "APPLICANT",
+      applicant.id,
+      tokens.refreshToken,
+    );
 
     return tokens;
   }
@@ -97,11 +99,13 @@ export class AuthService {
         isUsed: false,
         expiresAt: { gt: new Date() }, // 만료된 코드 DB 레벨에서 제외
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     if (!record) {
-      throw new BadRequestException('인증 코드가 올바르지 않거나 만료되었습니다.');
+      throw new BadRequestException(
+        "인증 코드가 올바르지 않거나 만료되었습니다.",
+      );
     }
 
     // 코드 사용 처리 + 지원자 인증 완료 처리 (트랜잭션)
@@ -127,20 +131,31 @@ export class AuthService {
       where: { email: dto.email },
     });
     if (!applicant) {
-      throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
+      throw new UnauthorizedException(
+        "이메일 또는 비밀번호가 올바르지 않습니다.",
+      );
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.password, applicant.password);
+    const isPasswordValid = await bcrypt.compare(
+      dto.password,
+      applicant.password,
+    );
     if (!isPasswordValid) {
-      throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
+      throw new UnauthorizedException(
+        "이메일 또는 비밀번호가 올바르지 않습니다.",
+      );
     }
 
     const tokens = await this.generateTokens({
       sub: applicant.id,
-      role: 'APPLICANT',
+      role: "APPLICANT",
     });
 
-    await this.updateRefreshToken('APPLICANT', applicant.id, tokens.refreshToken);
+    await this.updateRefreshToken(
+      "APPLICANT",
+      applicant.id,
+      tokens.refreshToken,
+    );
 
     return tokens;
   }
@@ -149,49 +164,53 @@ export class AuthService {
   // 기업 회원가입
   // ===========================
   async companySignup(dto: CompanySignupDto) {
-    let signupOtpPayload: { purpose: string; phone: string };
+    let signupOtpPayload: { purpose: string; email: string };
     try {
-      signupOtpPayload = this.jwtService.verify(dto.phoneVerificationToken, {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+      signupOtpPayload = this.jwtService.verify(dto.emailVerificationToken, {
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
       });
     } catch {
-      throw new UnauthorizedException('대표폰 OTP 인증 토큰이 만료되었거나 유효하지 않습니다.');
+      throw new UnauthorizedException(
+        "대표 이메일 인증 토큰이 만료되었거나 유효하지 않습니다.",
+      );
     }
 
     if (
-      signupOtpPayload.purpose !== 'company_signup' ||
-      signupOtpPayload.phone !== dto.phone
+      signupOtpPayload.purpose !== "company_signup" ||
+      signupOtpPayload.email !== dto.email
     ) {
-      throw new BadRequestException('대표폰 OTP 인증 정보가 회원가입 정보와 일치하지 않습니다.');
+      throw new BadRequestException(
+        "대표 이메일 인증 정보가 회원가입 정보와 일치하지 않습니다.",
+      );
     }
 
     const existingEmail = await this.prisma.company.findUnique({
       where: { email: dto.email },
     });
     if (existingEmail) {
-      throw new ConflictException('이미 등록된 이메일입니다.');
+      throw new ConflictException("이미 등록된 이메일입니다.");
     }
 
-    const normalizedBizNumber = dto.businessNumber.replace(/-/g, '');
+    const normalizedBizNumber = dto.businessNumber.replace(/-/g, "");
     const existingBiz = await this.prisma.company.findUnique({
       where: { businessNumber: normalizedBizNumber },
     });
     if (existingBiz) {
-      throw new ConflictException('이미 등록된 사업자등록번호입니다.');
+      throw new ConflictException("이미 등록된 사업자등록번호입니다.");
     }
 
     // NTS 사업자등록 진위확인 API 호출
     // TODO: 테스트 완료 후 주석 해제 필요
-    const serviceKey = this.configService.get<string>('NTS_API_KEY') ?? '';
-    
+    const serviceKey = this.configService.get<string>("NTS_API_KEY") ?? "";
+
     // 테스트 환경에서는 NTS API 검증 스킵
-    if (this.configService.get<string>('NODE_ENV') === 'production') {
+    if (this.configService.get<string>("NODE_ENV") === "production") {
       try {
         const ntsRes = await fetch(
           `https://api.odcloud.kr/api/nts-businessman/v1/validate?serviceKey=${encodeURIComponent(serviceKey)}&returnType=JSON`,
           {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               businesses: [
                 {
@@ -205,7 +224,9 @@ export class AuthService {
         );
 
         if (!ntsRes.ok) {
-          throw new BadRequestException('사업자 정보 확인 중 오류가 발생했습니다.');
+          throw new BadRequestException(
+            "사업자 정보 확인 중 오류가 발생했습니다.",
+          );
         }
 
         const ntsData = (await ntsRes.json()) as {
@@ -213,18 +234,22 @@ export class AuthService {
         };
 
         const result = ntsData?.data?.[0];
-        if (!result || result.valid !== '01') {
-          throw new BadRequestException('사업자 정보가 일치하지 않습니다.');
+        if (!result || result.valid !== "01") {
+          throw new BadRequestException("사업자 정보가 일치하지 않습니다.");
         }
       } catch (err) {
         // BadRequestException은 그대로 re-throw, 나머지 네트워크 오류 처리
         if (err instanceof BadRequestException) throw err;
-        throw new BadRequestException('사업자 정보 확인 중 오류가 발생했습니다.');
+        throw new BadRequestException(
+          "사업자 정보 확인 중 오류가 발생했습니다.",
+        );
       }
     }
     // development/test 환경에서는 사업자 정보 검증 스킵 (로그로만 표시)
     else {
-      console.log(`[DEV] NTS API 검증 스킵: ${normalizedBizNumber} / ${dto.representativeName}`);
+      console.log(
+        `[DEV] NTS API 검증 스킵: ${normalizedBizNumber} / ${dto.representativeName}`,
+      );
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
@@ -264,17 +289,24 @@ export class AuthService {
       where: { email: dto.email },
     });
     if (!company) {
-      throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
+      throw new UnauthorizedException(
+        "이메일 또는 비밀번호가 올바르지 않습니다.",
+      );
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.password, company.password);
+    const isPasswordValid = await bcrypt.compare(
+      dto.password,
+      company.password,
+    );
     if (!isPasswordValid) {
-      throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
+      throw new UnauthorizedException(
+        "이메일 또는 비밀번호가 올바르지 않습니다.",
+      );
     }
 
     // 기존 미사용 OTP 무효화 (같은 phone 으로 발급된 것)
     await this.prisma.otpVerification.updateMany({
-      where: { phone: company.phone, isUsed: false },
+      where: { email: company.email, isUsed: false },
       data: { isUsed: true },
     });
 
@@ -283,22 +315,22 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
 
     await this.prisma.otpVerification.create({
-      data: { phone: company.phone, code: otpCode, expiresAt },
+      data: { email: company.email, code: otpCode, expiresAt },
     });
 
-    // OTP SMS 발송 (실패해도 로그인 흐름은 계속 진행 — OTP는 이미 DB에 저장됨)
+    // 이메일 OTP 발송 (실패해도 로그인 흐름은 계속 진행 — OTP는 이미 DB에 저장됨)
     try {
-      await this.smsService.sendOtp(company.phone, otpCode);
+      await this.emailService.sendOtpEmail(company.email, otpCode);
     } catch {
-      // 발송 실패 시 로그는 SmsService 내부에서 처리
+      // 발송 실패 시 로그는 EmailService 내부에서 처리
     }
 
     // 임시 토큰 발급 (5분 유효 — OTP 유효시간 3분보다 여유 있게)
     const tempToken = this.jwtService.sign(
-      { sub: company.id, purpose: 'otp_verify' },
+      { sub: company.id, purpose: "otp_verify" },
       {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-        expiresIn: '5m',
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
+        expiresIn: "5m",
       },
     );
 
@@ -313,42 +345,48 @@ export class AuthService {
     let payload: { sub: string; purpose: string };
     try {
       payload = this.jwtService.verify(dto.tempToken, {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
       });
     } catch {
-      throw new UnauthorizedException('임시 토큰이 만료되었거나 유효하지 않습니다.');
+      throw new UnauthorizedException(
+        "임시 토큰이 만료되었거나 유효하지 않습니다.",
+      );
     }
 
-    if (payload.purpose !== 'otp_verify') {
-      throw new BadRequestException('유효하지 않은 토큰입니다.');
+    if (payload.purpose !== "otp_verify") {
+      throw new BadRequestException("유효하지 않은 토큰입니다.");
     }
 
     // 2. companyId → phone 조회
     const company = await this.prisma.company.findUnique({
       where: { id: payload.sub },
-      select: { id: true, phone: true },
+      select: { id: true, email: true },
     });
     if (!company) {
-      throw new UnauthorizedException('기업 정보를 찾을 수 없습니다.');
+      throw new UnauthorizedException("기업 정보를 찾을 수 없습니다.");
     }
 
     // 3. 유효한 OTP 레코드 조회 (미사용 + 만료 전)
     const otpRecord = await this.prisma.otpVerification.findFirst({
       where: {
-        phone: company.phone,
+        email: company.email,
         isUsed: false,
         expiresAt: { gt: new Date() },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     if (!otpRecord) {
-      throw new UnauthorizedException('OTP 코드가 만료되었습니다. 다시 로그인해주세요.');
+      throw new UnauthorizedException(
+        "OTP 코드가 만료되었습니다. 다시 로그인해주세요.",
+      );
     }
 
     // 4. 5회 실패 잠금 확인
     if (otpRecord.failCount >= 5) {
-      throw new UnauthorizedException('OTP 인증 5회 실패. OTP를 재발송 요청해주세요.');
+      throw new UnauthorizedException(
+        "OTP 인증 5회 실패. OTP를 재발송 요청해주세요.",
+      );
     }
 
     // 5. 코드 일치 확인
@@ -361,9 +399,13 @@ export class AuthService {
       const newFailCount = otpRecord.failCount + 1; // increment 반영
       const remaining = 5 - newFailCount;
       if (remaining <= 0) {
-        throw new UnauthorizedException('OTP 인증 5회 실패. OTP를 재발송 요청해주세요.');
+        throw new UnauthorizedException(
+          "OTP 인증 5회 실패. OTP를 재발송 요청해주세요.",
+        );
       }
-      throw new UnauthorizedException(`OTP 코드가 올바르지 않습니다. 남은 시도 횟수: ${remaining}회`);
+      throw new UnauthorizedException(
+        `OTP 코드가 올바르지 않습니다. 남은 시도 횟수: ${remaining}회`,
+      );
     }
 
     // 6. 인증 성공 — OTP 사용 처리
@@ -375,16 +417,16 @@ export class AuthService {
     // 7. 토큰 발급
     const tokens = await this.generateTokens({
       sub: company.id,
-      role: 'COMPANY',
+      role: "COMPANY",
     });
 
-    await this.updateRefreshToken('COMPANY', company.id, tokens.refreshToken);
+    await this.updateRefreshToken("COMPANY", company.id, tokens.refreshToken);
 
     return tokens;
   }
 
   // ===========================
-  // HR 매니저 등록 Step1 (CEO 인증 → OTP 발송)
+  // HR 매니저 등록 Step1 (회사 대표 이메일 인증 코드 발송)
   // ===========================
   async hrRegister(dto: HrRegisterDto, companyId: string) {
     // 1. 전화번호 중복 확인
@@ -392,20 +434,25 @@ export class AuthService {
       where: { phone: dto.phone },
     });
     if (existingHr) {
-      throw new ConflictException('이미 등록된 전화번호입니다.');
+      throw new ConflictException("이미 등록된 전화번호입니다.");
     }
 
-    // 2. 기업 조회 (CEO 전화번호 확보)
+    // 2. 기업 조회 (대표 이메일 확보)
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
     });
     if (!company) {
-      throw new UnauthorizedException('기업 정보를 찾을 수 없습니다.');
+      throw new UnauthorizedException("기업 정보를 찾을 수 없습니다.");
+    }
+    if (!company.email?.trim()) {
+      throw new BadRequestException(
+        "회사 대표 이메일이 등록되어 있지 않습니다.",
+      );
     }
 
-    // 3. 기존 미사용 OTP 무효화 (CEO 전화번호 기준)
+    // 3. 기존 미사용 HR 가입 OTP 무효화 (대표 이메일 기준)
     await this.prisma.otpVerification.updateMany({
-      where: { phone: company.phone, isUsed: false },
+      where: { email: company.email, isUsed: false },
       data: { isUsed: true },
     });
 
@@ -414,27 +461,27 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
 
     await this.prisma.otpVerification.create({
-      data: { phone: company.phone, code: otpCode, expiresAt },
+      data: { email: company.email, code: otpCode, expiresAt },
     });
 
-    // 5. CEO 전화번호로 OTP 발송
+    // 5. 회사 대표 이메일로 OTP 발송
     try {
-      await this.smsService.sendOtp(company.phone, otpCode);
+      await this.emailService.sendHrRegistrationEmail(company.email, otpCode);
     } catch {
-      // 발송 실패 시 로그는 SmsService 내부에서 처리
+      // 발송 실패 시 로그는 EmailService 내부에서 처리
     }
 
     // 6. 임시 토큰 발급 (5분, HR 정보 포함)
     const tempToken = this.jwtService.sign(
       {
         sub: companyId,
-        purpose: 'hr_register',
+        purpose: "hr_register",
         hrPhone: dto.phone,
         hrName: dto.name,
       },
       {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-        expiresIn: '5m',
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
+        expiresIn: "5m",
       },
     );
 
@@ -442,50 +489,64 @@ export class AuthService {
   }
 
   // ===========================
-  // HR 매니저 등록 Step2 (OTP 검증 → HR 생성)
+  // HR 매니저 등록 Step2 (대표 이메일 OTP 검증 → HR 생성)
   // ===========================
   async hrRegisterVerify(dto: HrOtpVerifyDto) {
     // 1. tempToken 검증
-    let payload: { sub: string; purpose: string; hrPhone: string; hrName: string };
+    let payload: {
+      sub: string;
+      purpose: string;
+      hrPhone: string;
+      hrName: string;
+    };
     try {
       payload = this.jwtService.verify(dto.tempToken, {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
       });
     } catch {
-      throw new UnauthorizedException('임시 토큰이 만료되었거나 유효하지 않습니다.');
+      throw new UnauthorizedException(
+        "임시 토큰이 만료되었거나 유효하지 않습니다.",
+      );
     }
 
-    if (payload.purpose !== 'hr_register') {
-      throw new BadRequestException('유효하지 않은 토큰입니다.');
+    if (payload.purpose !== "hr_register") {
+      throw new BadRequestException("유효하지 않은 토큰입니다.");
     }
 
     const { sub: companyId, hrPhone, hrName } = payload;
 
-    // 2. 기업 조회 (CEO 전화번호 확보)
+    // 2. 기업 조회 (대표 이메일 확보)
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
     });
     if (!company) {
-      throw new UnauthorizedException('기업 정보를 찾을 수 없습니다.');
+      throw new UnauthorizedException("기업 정보를 찾을 수 없습니다.");
+    }
+    if (!company.email?.trim()) {
+      throw new BadRequestException(
+        "회사 대표 이메일이 등록되어 있지 않습니다.",
+      );
     }
 
     // 3. 유효한 OTP 레코드 조회
     const otpRecord = await this.prisma.otpVerification.findFirst({
       where: {
-        phone: company.phone,
+        email: company.email,
         isUsed: false,
         expiresAt: { gt: new Date() },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     if (!otpRecord) {
-      throw new UnauthorizedException('OTP가 만료되었습니다.');
+      throw new UnauthorizedException("OTP가 만료되었습니다.");
     }
 
     // 4. 5회 실패 잠금 확인
     if (otpRecord.failCount >= 5) {
-      throw new UnauthorizedException('OTP 인증 5회 실패. OTP를 재발송 요청해주세요.');
+      throw new UnauthorizedException(
+        "OTP 인증 5회 실패. OTP를 재발송 요청해주세요.",
+      );
     }
 
     // 5. 코드 일치 확인
@@ -498,9 +559,13 @@ export class AuthService {
       const newFailCount = otpRecord.failCount + 1;
       const remaining = 5 - newFailCount;
       if (remaining <= 0) {
-        throw new UnauthorizedException('OTP 인증 5회 실패. OTP를 재발송 요청해주세요.');
+        throw new UnauthorizedException(
+          "OTP 인증 5회 실패. OTP를 재발송 요청해주세요.",
+        );
       }
-      throw new UnauthorizedException(`OTP 코드가 올바르지 않습니다. 남은 시도 횟수: ${remaining}회`);
+      throw new UnauthorizedException(
+        `OTP 코드가 올바르지 않습니다. 남은 시도 횟수: ${remaining}회`,
+      );
     }
 
     // 6. OTP 사용 처리 + HR 매니저 생성 (트랜잭션)
@@ -531,7 +596,7 @@ export class AuthService {
       where: { companyCode: dto.companyCode },
     });
     if (!company) {
-      throw new UnauthorizedException('기업 코드가 올바르지 않습니다.');
+      throw new UnauthorizedException("기업 코드가 올바르지 않습니다.");
     }
 
     // 2. 전화번호로 HR 매니저 조회 + 소속 기업 확인
@@ -539,12 +604,19 @@ export class AuthService {
       where: { phone: dto.phone },
     });
     if (!hrManager || hrManager.companyId !== company.id) {
-      throw new UnauthorizedException('전화번호 또는 기업 코드가 올바르지 않습니다.');
+      throw new UnauthorizedException(
+        "전화번호 또는 기업 코드가 올바르지 않습니다.",
+      );
+    }
+    if (!company.email?.trim()) {
+      throw new BadRequestException(
+        "회사 대표 이메일이 등록되어 있지 않습니다.",
+      );
     }
 
-    // 3. 기존 미사용 OTP 무효화 (HR 전화번호 기준)
+    // 3. 기존 미사용 OTP 무효화 (회사 대표 이메일 기준)
     await this.prisma.otpVerification.updateMany({
-      where: { phone: company.phone, isUsed: false },
+      where: { email: company.email, isUsed: false },
       data: { isUsed: true },
     });
 
@@ -553,22 +625,22 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
 
     await this.prisma.otpVerification.create({
-      data: { phone: company.phone, code: otpCode, expiresAt },
+      data: { email: company.email, code: otpCode, expiresAt },
     });
 
-    // 5. CEO 전화번호로 OTP 발송 (HR 로그인도 CEO 폰 기준 - 기획서 v2.0)
+    // 5. 회사 대표 이메일로 OTP 발송
     try {
-      await this.smsService.sendOtp(company.phone, otpCode);
+      await this.emailService.sendHrLoginEmail(company.email, otpCode);
     } catch {
-      // 발송 실패 시 로그는 SmsService 내부에서 처리
+      // 발송 실패 시 로그는 EmailService 내부에서 처리
     }
 
     // 6. 임시 토큰 발급 (5분)
     const tempToken = this.jwtService.sign(
-      { sub: hrManager.id, purpose: 'hr_otp_verify' },
+      { sub: hrManager.id, purpose: "hr_otp_verify" },
       {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-        expiresIn: '5m',
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
+        expiresIn: "5m",
       },
     );
 
@@ -583,46 +655,57 @@ export class AuthService {
     let payload: { sub: string; purpose: string };
     try {
       payload = this.jwtService.verify(dto.tempToken, {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
       });
     } catch {
-      throw new UnauthorizedException('임시 토큰이 만료되었거나 유효하지 않습니다.');
+      throw new UnauthorizedException(
+        "임시 토큰이 만료되었거나 유효하지 않습니다.",
+      );
     }
 
-    if (payload.purpose !== 'hr_otp_verify') {
-      throw new BadRequestException('유효하지 않은 토큰입니다.');
+    if (payload.purpose !== "hr_otp_verify") {
+      throw new BadRequestException("유효하지 않은 토큰입니다.");
     }
 
-    // 2. HR 매니저 조회 (전화번호 확보)
+    // 2. HR 매니저 조회 (회사 대표 이메일 확보)
     const hrManager = await this.prisma.hrManager.findUnique({
       where: { id: payload.sub },
       include: {
         company: {
-          select: { phone: true },
+          select: { email: true },
         },
       },
     });
     if (!hrManager) {
-      throw new UnauthorizedException('HR 매니저 정보를 찾을 수 없습니다.');
+      throw new UnauthorizedException("HR 매니저 정보를 찾을 수 없습니다.");
+    }
+    if (!hrManager.company.email?.trim()) {
+      throw new BadRequestException(
+        "회사 대표 이메일이 등록되어 있지 않습니다.",
+      );
     }
 
     // 3. 유효한 OTP 레코드 조회
     const otpRecord = await this.prisma.otpVerification.findFirst({
       where: {
-        phone: hrManager.company.phone,
+        email: hrManager.company.email,
         isUsed: false,
         expiresAt: { gt: new Date() },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     if (!otpRecord) {
-      throw new UnauthorizedException('OTP 코드가 만료되었습니다. 다시 로그인해주세요.');
+      throw new UnauthorizedException(
+        "OTP 코드가 만료되었습니다. 다시 로그인해주세요.",
+      );
     }
 
     // 4. 5회 실패 잠금 확인
     if (otpRecord.failCount >= 5) {
-      throw new UnauthorizedException('OTP 인증 5회 실패. OTP를 재발송 요청해주세요.');
+      throw new UnauthorizedException(
+        "OTP 인증 5회 실패. OTP를 재발송 요청해주세요.",
+      );
     }
 
     // 5. 코드 일치 확인
@@ -635,9 +718,13 @@ export class AuthService {
       const newFailCount = otpRecord.failCount + 1;
       const remaining = 5 - newFailCount;
       if (remaining <= 0) {
-        throw new UnauthorizedException('OTP 인증 5회 실패. OTP를 재발송 요청해주세요.');
+        throw new UnauthorizedException(
+          "OTP 인증 5회 실패. OTP를 재발송 요청해주세요.",
+        );
       }
-      throw new UnauthorizedException(`OTP 코드가 올바르지 않습니다. 남은 시도 횟수: ${remaining}회`);
+      throw new UnauthorizedException(
+        `OTP 코드가 올바르지 않습니다. 남은 시도 횟수: ${remaining}회`,
+      );
     }
 
     // 6. OTP 사용 처리
@@ -649,10 +736,14 @@ export class AuthService {
     // 7. 토큰 발급
     const tokens = await this.generateTokens({
       sub: hrManager.id,
-      role: 'HR_MANAGER',
+      role: "HR_MANAGER",
     });
 
-    await this.updateRefreshToken('HR_MANAGER', hrManager.id, tokens.refreshToken);
+    await this.updateRefreshToken(
+      "HR_MANAGER",
+      hrManager.id,
+      tokens.refreshToken,
+    );
 
     return tokens;
   }
@@ -664,21 +755,29 @@ export class AuthService {
     let payload: JwtPayload;
     try {
       payload = this.jwtService.verify(dto.refreshToken, {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+        secret: this.configService.get<string>("JWT_REFRESH_SECRET"),
       });
     } catch {
-      throw new UnauthorizedException('Refresh Token이 만료되었거나 유효하지 않습니다.');
+      throw new UnauthorizedException(
+        "Refresh Token이 만료되었거나 유효하지 않습니다.",
+      );
     }
 
     // DB에 저장된 refreshToken과 비교
-    const storedToken = await this.getStoredRefreshToken(payload.role, payload.sub);
+    const storedToken = await this.getStoredRefreshToken(
+      payload.role,
+      payload.sub,
+    );
     if (!storedToken) {
-      throw new UnauthorizedException('유효하지 않은 Refresh Token입니다.');
+      throw new UnauthorizedException("유효하지 않은 Refresh Token입니다.");
     }
 
-    const isTokenValid = await bcrypt.compare(this.preHashToken(dto.refreshToken), storedToken);
+    const isTokenValid = await bcrypt.compare(
+      this.preHashToken(dto.refreshToken),
+      storedToken,
+    );
     if (!isTokenValid) {
-      throw new UnauthorizedException('유효하지 않은 Refresh Token입니다.');
+      throw new UnauthorizedException("유효하지 않은 Refresh Token입니다.");
     }
 
     // Access Token + Refresh Token 모두 새로 발급 (Rotation)
@@ -688,7 +787,11 @@ export class AuthService {
     });
 
     // 새 Refresh Token으로 DB 교체
-    await this.updateRefreshToken(payload.role, payload.sub, tokens.refreshToken);
+    await this.updateRefreshToken(
+      payload.role,
+      payload.sub,
+      tokens.refreshToken,
+    );
 
     return tokens;
   }
@@ -704,11 +807,11 @@ export class AuthService {
     //    TTL = JWT_ACCESS_EXPIRES_IN(1h) = 3600초
     //    만료된 토큰은 어차피 검증 실패하므로 TTL이 지나면 자동 삭제됨
     const ttl = this.parseTtlToSeconds(
-      this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '1h',
+      this.configService.get<string>("JWT_ACCESS_EXPIRES_IN") ?? "1h",
     );
     await this.redisService.addToBlacklist(accessToken, ttl);
 
-    return { message: '로그아웃되었습니다.' };
+    return { message: "로그아웃되었습니다." };
   }
 
   // ===========================
@@ -716,7 +819,7 @@ export class AuthService {
   // ===========================
   async requestCompanySignupOtp(dto: CompanySignupOtpRequestDto) {
     await this.prisma.otpVerification.updateMany({
-      where: { phone: dto.phone, isUsed: false },
+      where: { email: dto.email, isUsed: false },
       data: { isUsed: true },
     });
 
@@ -724,16 +827,16 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
 
     await this.prisma.otpVerification.create({
-      data: { phone: dto.phone, code: otpCode, expiresAt },
+      data: { email: dto.email, code: otpCode, expiresAt },
     });
 
     try {
-      await this.smsService.sendOtp(dto.phone, otpCode);
+      await this.emailService.sendOtpEmail(dto.email, otpCode);
     } catch {
-      // sms failure logged in SmsService
+      // 발송 실패 시 로그는 EmailService 내부에서 처리
     }
 
-    return { message: 'OTP가 발송되었습니다.' };
+    return { message: "OTP가 발송되었습니다." };
   }
 
   // ===========================
@@ -742,19 +845,23 @@ export class AuthService {
   async verifyCompanySignupOtp(dto: CompanySignupOtpVerifyDto) {
     const otpRecord = await this.prisma.otpVerification.findFirst({
       where: {
-        phone: dto.phone,
+        email: dto.email,
         isUsed: false,
         expiresAt: { gt: new Date() },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     if (!otpRecord) {
-      throw new UnauthorizedException('OTP 코드가 만료되었거나 유효하지 않습니다.');
+      throw new UnauthorizedException(
+        "OTP 코드가 만료되었거나 유효하지 않습니다.",
+      );
     }
 
     if (otpRecord.failCount >= 5) {
-      throw new UnauthorizedException('OTP 인증 5회 실패. OTP를 재발송 요청해주세요.');
+      throw new UnauthorizedException(
+        "OTP 인증 5회 실패. OTP를 재발송 요청해주세요.",
+      );
     }
 
     if (otpRecord.code !== dto.otpCode) {
@@ -766,9 +873,13 @@ export class AuthService {
       const newFailCount = otpRecord.failCount + 1;
       const remaining = 5 - newFailCount;
       if (remaining <= 0) {
-        throw new UnauthorizedException('OTP 인증 5회 실패. OTP를 재발송 요청해주세요.');
+        throw new UnauthorizedException(
+          "OTP 인증 5회 실패. OTP를 재발송 요청해주세요.",
+        );
       }
-      throw new UnauthorizedException(`OTP 코드가 올바르지 않습니다. 남은 시도 횟수: ${remaining}회`);
+      throw new UnauthorizedException(
+        `OTP 코드가 올바르지 않습니다. 남은 시도 횟수: ${remaining}회`,
+      );
     }
 
     await this.prisma.otpVerification.update({
@@ -776,42 +887,52 @@ export class AuthService {
       data: { isUsed: true },
     });
 
-    const phoneVerificationToken = this.jwtService.sign(
-      { purpose: 'company_signup', phone: dto.phone },
+    const emailVerificationToken = this.jwtService.sign(
+      { purpose: "company_signup", email: dto.email },
       {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-        expiresIn: '10m',
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
+        expiresIn: "10m",
       },
     );
 
-    return { isVerified: true, phoneVerificationToken };
+    return { isVerified: true, emailVerificationToken };
   }
 
   // ===========================
   // 로그인 OTP 재발송
   // ===========================
   async resendOtp(dto: ResendOtpDto) {
-    const targetPhone = await this.resolveOtpResendPhone(dto.tempToken);
+    const target = await this.resolveOtpResendTarget(dto.tempToken);
 
     await this.prisma.otpVerification.updateMany({
-      where: { phone: targetPhone, isUsed: false },
+      where: { email: target.value, isUsed: false },
       data: { isUsed: true },
     });
 
     const otpCode = this.generateSixDigitCode();
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
 
-    await this.prisma.otpVerification.create({
-      data: { phone: targetPhone, code: otpCode, expiresAt },
-    });
-
     try {
-      await this.smsService.sendOtp(targetPhone, otpCode);
+      if (target.channel === "email") {
+        await this.prisma.otpVerification.create({
+          data: { email: target.value, code: otpCode, expiresAt },
+        });
+        if (target.emailType === "ceo_login") {
+          await this.emailService.sendOtpEmail(target.value, otpCode);
+        } else if (target.emailType === "hr_login") {
+          await this.emailService.sendHrLoginEmail(target.value, otpCode);
+        } else {
+          await this.emailService.sendHrRegistrationEmail(
+            target.value,
+            otpCode,
+          );
+        }
+      }
     } catch {
-      // sms failure logged in SmsService
+      // 발송 실패 시 각 서비스 내부에서 로그 처리
     }
 
-    return { message: 'OTP가 재발송되었습니다.' };
+    return { message: "OTP가 재발송되었습니다." };
   }
 
   // ===========================
@@ -823,25 +944,25 @@ export class AuthService {
     });
 
     if (!hrManager) {
-      throw new BadRequestException('존재하지 않는 인사팀장 계정입니다.');
+      throw new BadRequestException("존재하지 않는 인사팀장 계정입니다.");
     }
 
     if (hrManager.companyId !== companyId) {
-      throw new UnauthorizedException('해당 계정을 삭제할 권한이 없습니다.');
+      throw new UnauthorizedException("해당 계정을 삭제할 권한이 없습니다.");
     }
 
     await this.prisma.hrManager.delete({
       where: { id: hrUserId },
     });
 
-    return { message: '인사팀장 계정이 삭제되었습니다.' };
+    return { message: "인사팀장 계정이 삭제되었습니다." };
   }
 
   // ===========================
   // 현재 로그인 사용자 조회
   // ===========================
   async getMe(user: JwtPayload) {
-    if (user.role === 'APPLICANT') {
+    if (user.role === "APPLICANT") {
       const applicant = await this.prisma.applicant.findUnique({
         where: { id: user.sub },
         select: {
@@ -853,11 +974,12 @@ export class AuthService {
           updatedAt: true,
         },
       });
-      if (!applicant) throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
-      return { ...applicant, role: 'APPLICANT' };
+      if (!applicant)
+        throw new UnauthorizedException("사용자를 찾을 수 없습니다.");
+      return { ...applicant, role: "APPLICANT" };
     }
 
-    if (user.role === 'COMPANY') {
+    if (user.role === "COMPANY") {
       const company = await this.prisma.company.findUnique({
         where: { id: user.sub },
         select: {
@@ -874,11 +996,12 @@ export class AuthService {
           updatedAt: true,
         },
       });
-      if (!company) throw new UnauthorizedException('기업 정보를 찾을 수 없습니다.');
-      return { ...company, role: 'COMPANY' };
+      if (!company)
+        throw new UnauthorizedException("기업 정보를 찾을 수 없습니다.");
+      return { ...company, role: "COMPANY" };
     }
 
-    if (user.role === 'HR_MANAGER') {
+    if (user.role === "HR_MANAGER") {
       const hr = await this.prisma.hrManager.findUnique({
         where: { id: user.sub },
         select: {
@@ -896,60 +1019,103 @@ export class AuthService {
           updatedAt: true,
         },
       });
-      if (!hr) throw new UnauthorizedException('인사팀장 정보를 찾을 수 없습니다.');
-      return { ...hr, role: 'HR_MANAGER' };
+      if (!hr)
+        throw new UnauthorizedException("인사팀장 정보를 찾을 수 없습니다.");
+      return { ...hr, role: "HR_MANAGER" };
     }
 
-    throw new BadRequestException('유효하지 않은 역할입니다.');
+    throw new BadRequestException("유효하지 않은 역할입니다.");
   }
 
   // "1h" / "7d" / "30m" 형식을 초 단위로 변환
-  private async resolveOtpResendPhone(tempToken: string): Promise<string> {
+  private async resolveOtpResendTarget(tempToken: string): Promise<{
+    channel: "email";
+    value: string;
+    emailType?: "ceo_login" | "hr_register" | "hr_login";
+  }> {
     let payload: { sub: string; purpose: string };
     try {
       payload = this.jwtService.verify(tempToken, {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
       });
     } catch {
-      throw new UnauthorizedException('임시 토큰이 만료되었거나 유효하지 않습니다.');
+      throw new UnauthorizedException(
+        "임시 토큰이 만료되었거나 유효하지 않습니다.",
+      );
     }
 
-    if (payload.purpose === 'otp_verify' || payload.purpose === 'hr_register') {
+    if (payload.purpose === "otp_verify") {
       const company = await this.prisma.company.findUnique({
         where: { id: payload.sub },
-        select: { phone: true },
+        select: { email: true },
       });
-      if (!company) throw new UnauthorizedException('기업 정보를 찾을 수 없습니다.');
-      return company.phone;
+      if (!company)
+        throw new UnauthorizedException("기업 정보를 찾을 수 없습니다.");
+      return { channel: "email", value: company.email, emailType: "ceo_login" };
     }
 
-    if (payload.purpose === 'hr_otp_verify') {
+    if (payload.purpose === "hr_register") {
+      const company = await this.prisma.company.findUnique({
+        where: { id: payload.sub },
+        select: { email: true },
+      });
+      if (!company)
+        throw new UnauthorizedException("기업 정보를 찾을 수 없습니다.");
+      if (!company.email?.trim()) {
+        throw new BadRequestException(
+          "회사 대표 이메일이 등록되어 있지 않습니다.",
+        );
+      }
+      return {
+        channel: "email",
+        value: company.email,
+        emailType: "hr_register",
+      };
+    }
+
+    if (payload.purpose === "hr_otp_verify") {
       const hrManager = await this.prisma.hrManager.findUnique({
         where: { id: payload.sub },
         select: {
           company: {
-            select: { phone: true },
+            select: { email: true },
           },
         },
       });
       if (!hrManager) {
-        throw new UnauthorizedException('HR 매니저 정보를 찾을 수 없습니다.');
+        throw new UnauthorizedException("HR 매니저 정보를 찾을 수 없습니다.");
       }
-      return hrManager.company.phone;
+      if (!hrManager.company.email?.trim()) {
+        throw new BadRequestException(
+          "회사 대표 이메일이 등록되어 있지 않습니다.",
+        );
+      }
+      return {
+        channel: "email",
+        value: hrManager.company.email,
+        emailType: "hr_login",
+      };
     }
 
-    throw new BadRequestException('OTP 재발송에 사용할 수 없는 임시 토큰입니다.');
+    throw new BadRequestException(
+      "OTP 재발송에 사용할 수 없는 임시 토큰입니다.",
+    );
   }
 
   private parseTtlToSeconds(ttl: string): number {
     const unit = ttl.slice(-1);
     const value = parseInt(ttl.slice(0, -1), 10);
     switch (unit) {
-      case 's': return value;
-      case 'm': return value * 60;
-      case 'h': return value * 60 * 60;
-      case 'd': return value * 60 * 60 * 24;
-      default:  return 3600; // fallback: 1h
+      case "s":
+        return value;
+      case "m":
+        return value * 60;
+      case "h":
+        return value * 60 * 60;
+      case "d":
+        return value * 60 * 60 * 24;
+      default:
+        return 3600; // fallback: 1h
     }
   }
 
@@ -960,16 +1126,18 @@ export class AuthService {
   private async generateTokens(payload: { sub: string; role: string }) {
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-        expiresIn: this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '1h',
+        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
+        expiresIn:
+          this.configService.get<string>("JWT_ACCESS_EXPIRES_IN") ?? "1h",
       }),
       // jti(JWT ID)를 추가해 같은 초에 발급해도 항상 다른 토큰이 생성되도록 보장
       // 이 없으면 iat가 초 단위라 동일 payload+secret+expiresIn → 동일 토큰 → Rotation 무력화
       this.jwtService.signAsync(
         { ...payload, jti: randomUUID() },
         {
-          secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-          expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d',
+          secret: this.configService.get<string>("JWT_REFRESH_SECRET"),
+          expiresIn:
+            this.configService.get<string>("JWT_REFRESH_EXPIRES_IN") ?? "7d",
         },
       ),
     ]);
@@ -988,19 +1156,19 @@ export class AuthService {
     const hashedToken = await bcrypt.hash(this.preHashToken(refreshToken), 10);
 
     switch (role) {
-      case 'APPLICANT':
+      case "APPLICANT":
         await this.prisma.applicant.update({
           where: { id: userId },
           data: { refreshToken: hashedToken },
         });
         break;
-      case 'COMPANY':
+      case "COMPANY":
         await this.prisma.company.update({
           where: { id: userId },
           data: { refreshToken: hashedToken },
         });
         break;
-      case 'HR_MANAGER':
+      case "HR_MANAGER":
         await this.prisma.hrManager.update({
           where: { id: userId },
           data: { refreshToken: hashedToken },
@@ -1014,21 +1182,21 @@ export class AuthService {
     userId: string,
   ): Promise<string | null> {
     switch (role) {
-      case 'APPLICANT': {
+      case "APPLICANT": {
         const user = await this.prisma.applicant.findUnique({
           where: { id: userId },
           select: { refreshToken: true },
         });
         return user?.refreshToken ?? null;
       }
-      case 'COMPANY': {
+      case "COMPANY": {
         const company = await this.prisma.company.findUnique({
           where: { id: userId },
           select: { refreshToken: true },
         });
         return company?.refreshToken ?? null;
       }
-      case 'HR_MANAGER': {
+      case "HR_MANAGER": {
         const hr = await this.prisma.hrManager.findUnique({
           where: { id: userId },
           select: { refreshToken: true },
@@ -1042,19 +1210,19 @@ export class AuthService {
 
   private async clearRefreshToken(role: string, userId: string) {
     switch (role) {
-      case 'APPLICANT':
+      case "APPLICANT":
         await this.prisma.applicant.update({
           where: { id: userId },
           data: { refreshToken: null },
         });
         break;
-      case 'COMPANY':
+      case "COMPANY":
         await this.prisma.company.update({
           where: { id: userId },
           data: { refreshToken: null },
         });
         break;
-      case 'HR_MANAGER':
+      case "HR_MANAGER":
         await this.prisma.hrManager.update({
           where: { id: userId },
           data: { refreshToken: null },
@@ -1070,14 +1238,15 @@ export class AuthService {
   // 기존에 companyCode가 null인 기업은 Prisma Studio에서 직접 수동 업데이트 필요:
   // prisma studio → companies 테이블 → companyCode가 null인 행 선택 → 값 입력 후 저장
   private generateCompanyCode(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    return Array.from({ length: 8 }, () =>
-      chars[Math.floor(Math.random() * chars.length)],
-    ).join('');
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    return Array.from(
+      { length: 8 },
+      () => chars[Math.floor(Math.random() * chars.length)],
+    ).join("");
   }
 
   // bcrypt 72바이트 한계 우회를 위한 사전 해싱
   private preHashToken(token: string): string {
-    return createHash('sha256').update(token).digest('hex');
+    return createHash("sha256").update(token).digest("hex");
   }
 }

@@ -40,7 +40,6 @@ model Company {
   businessNumber     String   @unique
   representativeName String
   startDate          String   // 개업일자 YYYYMMDD
-  phone              String
   companyCode        String?  @unique
   isVerified         Boolean  @default(false)
   isPaid             Boolean  @default(false)
@@ -58,7 +57,8 @@ model Company {
 // HR 담당자 (기업 소속)
 model HrManager {
   id           String   @id @default(uuid())
-  phone        String   @unique
+  email        String?  @unique
+  password     String?
   name         String
   refreshToken String?
   companyId    String
@@ -84,7 +84,6 @@ model EmailVerification {
 // OTP 인증 (기업 CEO 로그인 2단계)
 model OtpVerification {
   id        String   @id @default(uuid())
-  phone     String?
   email     String?
   code      String
   expiresAt DateTime

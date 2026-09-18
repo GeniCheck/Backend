@@ -46,7 +46,8 @@ describe('AuthController', () => {
     const dto = {
       companyCode: 'COMP001',
       name: '홍길동',
-      phone: '010-1234-5678',
+      email: 'hr@company.com',
+      password: 'Pass1!',
     };
     await controller.hrRegister(dto);
     expect(authServiceMock.hrRegister).toHaveBeenCalledWith(dto);

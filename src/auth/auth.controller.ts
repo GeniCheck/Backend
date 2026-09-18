@@ -158,6 +158,7 @@ export class AuthController {
   @ApiResponse({ status: 409, description: "이미 등록된 전화번호" })
   @ResponseMessage("인증번호가 회사 대표 이메일로 발송되었습니다.")
   @ApiOperation({ summary: "인사팀장 가입 1단계 - 회사코드 확인 후 회사 공식 이메일로 인증코드 발송" })
+  @ApiOperation({ summary: "인사팀장 가입 1단계 - 회사코드 확인 후 본인 이메일로 인증코드 발송" })
   async hrRegister(@Body() dto: HrRegisterDto) {
     return this.authService.hrRegister(dto);
   }

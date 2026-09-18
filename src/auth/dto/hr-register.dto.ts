@@ -1,21 +1,28 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, Matches } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class HrRegisterDto {
   @ApiProperty({ example: 'COMP001', description: '가입할 회사 코드' })
   @IsString()
   @IsNotEmpty()
-  companyCode?: string;
+  companyCode!: string;
+
+  @ApiProperty({ example: 'hr.manager@company.com', description: 'HR 로그인 이메일' })
+  @IsEmail()
+  @IsNotEmpty()
+  @MaxLength(50)
+  email!: string;
+
+  @ApiProperty({ example: 'Pass1!', description: 'HR 로그인 비밀번호' })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(6)
+  @MaxLength(30)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).+$/)
+  password!: string;
 
   @ApiProperty({ example: '홍길동', description: 'HR 담당자 이름' })
   @IsString()
-  @IsNotEmpty({ message: '이름을 입력해주세요.' })
+  @IsNotEmpty()
   name!: string;
-
-  @ApiProperty({ example: '010-1234-5678', description: 'HR 담당자 전화번호 (형식: 010-0000-0000)' })
-  @IsString()
-  @Matches(/^01[016789]-\d{3,4}-\d{4}$/, {
-    message: '전화번호는 010-0000-0000 형식이어야 합니다.',
-  })
-  phone!: string;
 }

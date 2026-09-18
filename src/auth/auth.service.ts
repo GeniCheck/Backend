@@ -320,7 +320,6 @@ export class AuthService {
         businessNumber: normalizedBizNumber,
         representativeName: dto.representativeName,
         startDate: dto.startDate,
-        phone: dto.phone,
         companyCode,
       },
     });
@@ -358,7 +357,7 @@ export class AuthService {
 
     // 기존 미사용 OTP 무효화 (같은 phone 으로 발급된 것)
     await this.prisma.otpVerification.updateMany({
-      where: { email: company.email, isUsed: false },
+      where: { email: dto.email, isUsed: false },
       data: { isUsed: true },
     });
 
@@ -367,7 +366,7 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
 
     await this.prisma.otpVerification.create({
-      data: { email: company.email, code: otpCode, expiresAt },
+      data: { email: dto.email, code: otpCode, expiresAt },
     });
 
     // 이메일 OTP 발송 (실패해도 로그인 흐름은 계속 진행 — OTP는 이미 DB에 저장됨)
@@ -481,9 +480,11 @@ export class AuthService {
   // HR 매니저 등록 Step1 (회사 대표 이메일 인증 코드 발송)
   // ===========================
   async hrRegister(dto: HrRegisterDto, legacyCompanyId?: string) {
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
+
     // 1. 전화번호 중복 확인
     const existingHr = await this.prisma.hrManager.findUnique({
-      where: { phone: dto.phone },
+      where: { email: dto.email },
     });
     if (existingHr) {
       throw new ConflictException("이미 등록된 전화번호입니다.");
@@ -510,7 +511,7 @@ export class AuthService {
 
     // 3. 기존 미사용 HR 가입 OTP 무효화 (대표 이메일 기준)
     await this.prisma.otpVerification.updateMany({
-      where: { email: company.email, isUsed: false },
+      where: { email: dto.email, isUsed: false },
       data: { isUsed: true },
     });
 
@@ -519,12 +520,12 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
 
     await this.prisma.otpVerification.create({
-      data: { email: company.email, code: otpCode, expiresAt },
+      data: { email: dto.email, code: otpCode, expiresAt },
     });
 
     // 5. 회사 대표 이메일로 OTP 발송
     try {
-      await this.emailService.sendHrRegistrationEmail(company.email, otpCode);
+      await this.emailService.sendOtpEmail(dto.email, otpCode);
     } catch {
       // 발송 실패 시 로그는 EmailService 내부에서 처리
     }
@@ -534,8 +535,9 @@ export class AuthService {
       {
         sub: company.id,
         purpose: "hr_register",
-        hrPhone: dto.phone,
+        hrEmail: dto.email,
         hrName: dto.name,
+        hrPassword: hashedPassword,
       },
       {
         secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
@@ -554,8 +556,9 @@ export class AuthService {
     let payload: {
       sub: string;
       purpose: string;
-      hrPhone: string;
+      hrEmail: string;
       hrName: string;
+      hrPassword: string;
     };
     try {
       payload = this.jwtService.verify(dto.tempToken, {
@@ -571,7 +574,7 @@ export class AuthService {
       throw new BadRequestException("유효하지 않은 토큰입니다.");
     }
 
-    const { sub: companyId, hrPhone, hrName } = payload;
+    const { sub: companyId, hrEmail, hrName, hrPassword } = payload;
 
     // 2. 기업 조회 (대표 이메일 확보)
     const company = await this.prisma.company.findUnique({
@@ -580,7 +583,7 @@ export class AuthService {
     if (!company) {
       throw new UnauthorizedException("기업 정보를 찾을 수 없습니다.");
     }
-    if (!company.email?.trim()) {
+    if (!hrEmail?.trim()) {
       throw new BadRequestException(
         "회사 대표 이메일이 등록되어 있지 않습니다.",
       );
@@ -589,7 +592,7 @@ export class AuthService {
     // 3. 유효한 OTP 레코드 조회
     const otpRecord = await this.prisma.otpVerification.findFirst({
       where: {
-        email: company.email,
+        email: hrEmail,
         isUsed: false,
         expiresAt: { gt: new Date() },
       },
@@ -633,14 +636,19 @@ export class AuthService {
         data: { isUsed: true },
       }),
       this.prisma.hrManager.create({
-        data: { phone: hrPhone, name: hrName, companyId },
+        data: {
+          email: hrEmail,
+          password: hrPassword,
+          name: hrName,
+          companyId,
+        },
       }),
     ]);
 
     return {
       id: hrManager.id,
       name: hrManager.name,
-      phone: hrManager.phone,
+      email: hrManager.email,
       companyId: hrManager.companyId,
     };
   }
@@ -650,11 +658,15 @@ export class AuthService {
   // ===========================
   async hrLogin(dto: HrLoginDto) {
     const hrManager = await this.prisma.hrManager.findUnique({
-      where: { phone: dto.phone },
+      where: { email: dto.email },
       include: { company: { select: { email: true } } },
     });
     if (!hrManager) {
       throw new UnauthorizedException("등록된 인사팀장 계정을 찾을 수 없습니다.");
+    }
+
+    if (!hrManager.password || !(await bcrypt.compare(dto.password, hrManager.password))) {
+      throw new UnauthorizedException("이메일 또는 비밀번호가 올바르지 않습니다.");
     }
 
     const companyEmail = hrManager.company.email;
@@ -693,7 +705,7 @@ export class AuthService {
   async hrLoginLegacy(dto: HrLoginDto) {
     // 1. 기업 코드로 기업 조회
     const company = await this.prisma.company.findUnique({
-      where: { companyCode: dto.companyCode },
+      where: { email: dto.email },
     });
     if (!company) {
       throw new UnauthorizedException("기업 코드가 올바르지 않습니다.");
@@ -701,7 +713,7 @@ export class AuthService {
 
     // 2. 전화번호로 HR 매니저 조회 + 소속 기업 확인
     const hrManager = await this.prisma.hrManager.findUnique({
-      where: { phone: dto.phone },
+      where: { email: dto.email },
     });
     if (!hrManager || hrManager.companyId !== company.id) {
       throw new UnauthorizedException(
@@ -1024,10 +1036,7 @@ export class AuthService {
         } else if (target.emailType === "hr_login") {
           await this.emailService.sendHrLoginEmail(target.value, otpCode);
         } else {
-          await this.emailService.sendHrRegistrationEmail(
-            target.value,
-            otpCode,
-          );
+          await this.emailService.sendOtpEmail(target.value, otpCode);
         }
       }
     } catch {
@@ -1090,7 +1099,6 @@ export class AuthService {
           companyName: true,
           businessNumber: true,
           representativeName: true,
-          phone: true,
           companyCode: true,
           isVerified: true,
           isPaid: true,
@@ -1109,7 +1117,6 @@ export class AuthService {
         select: {
           id: true,
           name: true,
-          phone: true,
           companyId: true,
           company: {
             select: {
@@ -1135,7 +1142,7 @@ export class AuthService {
     value: string;
     emailType?: "ceo_login" | "hr_register" | "hr_login";
   }> {
-    let payload: { sub: string; purpose: string };
+    let payload: { sub: string; purpose: string; hrEmail?: string };
     try {
       payload = this.jwtService.verify(tempToken, {
         secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
@@ -1157,6 +1164,14 @@ export class AuthService {
     }
 
     if (payload.purpose === "hr_register") {
+      if (payload.hrEmail?.trim()) {
+        return {
+          channel: "email",
+          value: payload.hrEmail,
+          emailType: "hr_register",
+        };
+      }
+
       const company = await this.prisma.company.findUnique({
         where: { id: payload.sub },
         select: { email: true },

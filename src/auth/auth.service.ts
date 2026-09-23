@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
+import { Prisma } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import { createHash, randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
@@ -59,13 +60,21 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    const applicant = await this.prisma.applicant.create({
-      data: {
-        email,
-        password: hashedPassword,
-        name: dto.name,
-      },
-    });
+    let applicant;
+    try {
+      applicant = await this.prisma.applicant.create({
+        data: {
+          email,
+          password: hashedPassword,
+          name: dto.name,
+        },
+      });
+    } catch (err) {
+      if (this.isUniqueConstraintError(err)) {
+        throw new ConflictException("이미 등록된 이메일입니다.");
+      }
+      throw err;
+    }
 
     // 이메일 인증 코드 생성 및 저장
     const code = this.generateSixDigitCode();
@@ -323,17 +332,27 @@ export class AuthService {
       companyCode = this.generateCompanyCode();
     } while (await this.prisma.company.findUnique({ where: { companyCode } }));
 
-    const company = await this.prisma.company.create({
-      data: {
-        email,
-        password: hashedPassword,
-        companyName: dto.companyName,
-        businessNumber: normalizedBizNumber,
-        representativeName: dto.representativeName,
-        startDate: dto.startDate,
-        companyCode,
-      },
-    });
+    let company;
+    try {
+      company = await this.prisma.company.create({
+        data: {
+          email,
+          password: hashedPassword,
+          companyName: dto.companyName,
+          businessNumber: normalizedBizNumber,
+          representativeName: dto.representativeName,
+          startDate: dto.startDate,
+          companyCode,
+        },
+      });
+    } catch (err) {
+      if (this.isUniqueConstraintError(err)) {
+        throw new ConflictException(
+          "이미 등록된 이메일 또는 사업자등록번호입니다.",
+        );
+      }
+      throw err;
+    }
 
     return {
       id: company.id,
@@ -573,14 +592,22 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    const hrManager = await this.prisma.hrManager.create({
-      data: {
-        email: payload.hrEmail,
-        password: hashedPassword,
-        name: payload.hrName,
-        companyId: payload.sub,
-      },
-    });
+    let hrManager;
+    try {
+      hrManager = await this.prisma.hrManager.create({
+        data: {
+          email: payload.hrEmail,
+          password: hashedPassword,
+          name: payload.hrName,
+          companyId: payload.sub,
+        },
+      });
+    } catch (err) {
+      if (this.isUniqueConstraintError(err)) {
+        throw new ConflictException("이미 가입이 완료된 이메일입니다.");
+      }
+      throw err;
+    }
 
     return {
       id: hrManager.id,
@@ -1378,6 +1405,15 @@ export class AuthService {
   // 이메일 대소문자·앞뒤 공백 차이로 중복가입/로그인 실패가 생기지 않도록 정규화
   private normalizeEmail(email: string): string {
     return email.trim().toLowerCase();
+  }
+
+  // 동시에 같은 이메일로 두 요청이 들어오면 findUnique 중복 체크를 둘 다 통과할 수 있음
+  // (TOCTOU) — 그 경우 DB unique 제약 위반(P2002)이 나는데, 이걸 날것 500 대신
+  // 원래 의도했던 409 Conflict로 바꿔주기 위한 헬퍼
+  private isUniqueConstraintError(err: unknown): boolean {
+    return (
+      err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002"
+    );
   }
 
   // 8자리 영문 대문자 + 숫자 조합 기업 코드 생성 (예: AB12CD34)

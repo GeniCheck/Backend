@@ -70,4 +70,18 @@ describe('AuthController', () => {
     await controller.hrAcceptInvite(dto);
     expect(authServiceMock.hrAcceptInvite).toHaveBeenCalledWith(dto);
   });
+
+  it('allows a COMPANY caller to delete an HR manager', async () => {
+    const req = { user: { sub: 'company-1', role: 'COMPANY' } } as any;
+    await controller.deleteHrManager('hr-1', req);
+    expect(authServiceMock.deleteHrManager).toHaveBeenCalledWith('hr-1', 'company-1');
+  });
+
+  it('rejects HR manager deletion from a non-COMPANY caller', async () => {
+    const req = { user: { sub: 'hr-2', role: 'HR_MANAGER' } } as any;
+    await expect(controller.deleteHrManager('hr-1', req)).rejects.toThrow(
+      '대표만 인사팀장을 삭제할 수 있습니다.',
+    );
+    expect(authServiceMock.deleteHrManager).not.toHaveBeenCalled();
+  });
 });

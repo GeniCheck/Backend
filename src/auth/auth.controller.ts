@@ -316,12 +316,16 @@ export class AuthController {
   @ApiOperation({ summary: "인사팀장 계정 삭제 (COMPANY 권한 필요)" })
   @ApiResponse({ status: 200, description: "인사팀장 계정 삭제 성공" })
   @ApiResponse({ status: 401, description: "권한 없음" })
+  @ApiResponse({ status: 403, description: "대표만 인사팀장을 삭제할 수 있음" })
   @ResponseMessage("인사팀장 계정이 삭제되었습니다.")
   async deleteHrManager(
     @Param("hrUserId") hrUserId: string,
     @Req() req: Request,
   ) {
     const user = req.user as JwtPayload;
+    if (user.role !== "COMPANY") {
+      throw new ForbiddenException("대표만 인사팀장을 삭제할 수 있습니다.");
+    }
     return this.authService.deleteHrManager(hrUserId, user.sub);
   }
 

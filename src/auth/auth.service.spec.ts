@@ -2,10 +2,17 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { BadRequestException, UnauthorizedException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { AuthService } from "./auth.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailService } from "./email/email.service";
 import { RedisService } from "./redis/redis.service";
+
+const uniqueConstraintError = () =>
+  new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+    code: "P2002",
+    clientVersion: "5.22.0",
+  });
 
 describe("AuthService (전하은 담당 14개 API 검증)", () => {
   let service: AuthService;
@@ -226,6 +233,25 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     expect(prismaMock.hrManager.create).not.toHaveBeenCalled();
   });
 
+  it("hrAcceptInvite: 동시 요청 경합으로 create가 unique 위반이면 409로 처리", async () => {
+    jwtMock.verify.mockReturnValue({
+      sub: "comp-1",
+      purpose: "hr_invite",
+      hrEmail: "hr@company.com",
+      hrName: "홍길동",
+    });
+    prismaMock.hrManager.findUnique.mockResolvedValue(null);
+    prismaMock.company.findUnique.mockResolvedValue({
+      id: "comp-1",
+      email: "ceo@company.com",
+    });
+    prismaMock.hrManager.create.mockRejectedValue(uniqueConstraintError());
+
+    await expect(
+      service.hrAcceptInvite({ token: "invite-token", password: "Pass1!" }),
+    ).rejects.toThrow("이미 가입이 완료된 이메일입니다.");
+  });
+
   it("7. hrLogin (회사 대표 이메일로 로그인 OTP 발송) 정상 작동", async () => {
     prismaMock.company.findUnique.mockResolvedValue({
       id: "comp-1",
@@ -348,6 +374,19 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
 
   it("applicantSignup: 이미 등록된 이메일이면 실패", async () => {
     prismaMock.applicant.findUnique.mockResolvedValue({ id: "app-existing" });
+
+    await expect(
+      service.applicantSignup({
+        email: "user@test.com",
+        password: "Pass1!",
+        name: "김철수",
+      } as any),
+    ).rejects.toThrow("이미 등록된 이메일입니다.");
+  });
+
+  it("applicantSignup: 동시 요청 경합(findUnique는 통과했지만 create가 unique 위반)도 409로 처리", async () => {
+    prismaMock.applicant.findUnique.mockResolvedValue(null);
+    prismaMock.applicant.create.mockRejectedValue(uniqueConstraintError());
 
     await expect(
       service.applicantSignup({
@@ -488,6 +527,38 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     expect(prismaMock.company.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ email: "ceo@company.com" }),
     });
+  });
+
+  it("companySignup: 동시 요청 경합으로 create가 unique 위반이면 409로 처리", async () => {
+    jwtMock.verify
+      .mockReturnValueOnce({
+        purpose: "company_business",
+        businessNumber: "1234567890",
+        representativeName: "홍길동",
+        startDate: "20200101",
+      })
+      .mockReturnValueOnce({
+        purpose: "company_signup",
+        email: "ceo@company.com",
+      });
+    prismaMock.company.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    prismaMock.company.create.mockRejectedValue(uniqueConstraintError());
+
+    await expect(
+      service.companySignup({
+        email: "ceo@company.com",
+        password: "Pass1!",
+        companyName: "지니체크",
+        businessNumber: "123-45-67890",
+        representativeName: "홍길동",
+        startDate: "20200101",
+        emailVerificationToken: "mock-temp-token",
+        businessVerificationToken: "mock-temp-token",
+      } as any),
+    ).rejects.toThrow("이미 등록된 이메일 또는 사업자등록번호입니다.");
   });
 
   it("companyLoginStep1: 정상 로그인 시 본인 이메일로 OTP 발송 (purpose 분리)", async () => {

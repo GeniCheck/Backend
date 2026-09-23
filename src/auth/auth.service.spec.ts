@@ -138,18 +138,16 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     expect(res).toEqual({ message: "OTP가 재발송되었습니다." });
   });
 
-  it("4. hrRegister (회사 대표 이메일로 HR 가입 OTP 발송) 정상 작동", async () => {
+  it("4. hrRegister (대표 로그인 상태에서 대표 본인 이메일로 HR 가입 OTP 발송) 정상 작동", async () => {
     prismaMock.company.findUnique.mockResolvedValue({
       id: "comp-1",
       email: "ceo@company.com",
-      phone: "010-1234-5678",
     });
     prismaMock.otpVerification.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.otpVerification.create.mockResolvedValue({ id: "otp-hr-1" });
 
     const res = await service.hrRegister(
       {
-        companyCode: "COMP001",
         name: "홍길동",
         email: "hr@company.com",
         password: "Pass1!",
@@ -159,17 +157,17 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
 
     expect(res).toEqual({ tempToken: "mock-temp-token" });
     expect(prismaMock.otpVerification.updateMany).toHaveBeenCalledWith({
-      where: { email: "hr@company.com", isUsed: false },
+      where: { email: "ceo@company.com", isUsed: false },
       data: { isUsed: true },
     });
     expect(prismaMock.otpVerification.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        email: "hr@company.com",
+        email: "ceo@company.com",
         code: expect.any(String),
       }),
     });
-    expect(emailMock.sendOtpEmail).toHaveBeenCalledWith(
-      "hr@company.com",
+    expect(emailMock.sendHrRegistrationEmail).toHaveBeenCalledWith(
+      "ceo@company.com",
       expect.any(String),
     );
   });
@@ -178,13 +176,11 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     prismaMock.company.findUnique.mockResolvedValue({
       id: "comp-1",
       email: "",
-      phone: "010-1234-5678",
     });
 
     await expect(
       service.hrRegister(
         {
-          companyCode: "COMP001",
           name: "홍길동",
           email: "hr@company.com",
           password: "Pass1!",
@@ -195,7 +191,7 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     expect(emailMock.sendHrRegistrationEmail).not.toHaveBeenCalled();
   });
 
-  it("6. hrRegisterVerify (대표 이메일 OTP 검증 후 HR 생성) 정상 작동", async () => {
+  it("6. hrRegisterVerify (대표 본인 이메일 OTP 검증 후 HR 생성) 정상 작동", async () => {
     jwtMock.verify.mockReturnValue({
       sub: "comp-1",
       purpose: "hr_register",
@@ -206,7 +202,6 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     prismaMock.company.findUnique.mockResolvedValue({
       id: "comp-1",
       email: "ceo@company.com",
-      phone: "010-1234-5678",
     });
     prismaMock.otpVerification.findFirst.mockResolvedValue({
       id: "otp-hr-1",
@@ -223,10 +218,13 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
       companyId: "comp-1",
     });
 
-    const res = await service.hrRegisterVerify({
-      tempToken: "mock-temp-token",
-      otpCode: "123456",
-    });
+    const res = await service.hrRegisterVerify(
+      {
+        tempToken: "mock-temp-token",
+        otpCode: "123456",
+      },
+      "comp-1",
+    );
 
     expect(res).toEqual({
       id: "hr-1",
@@ -236,7 +234,7 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     });
     expect(prismaMock.otpVerification.findFirst).toHaveBeenCalledWith({
       where: {
-        email: "hr@company.com",
+        email: "ceo@company.com",
         isUsed: false,
         expiresAt: { gt: expect.any(Date) },
       },

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -47,15 +48,13 @@ export class AuthController {
   // 지원자 회원가입
   // ===========================
   @Post("applicant/signup")
-  @ApiOperation({ summary: "지원자 회원가입 (완료 후 인증 이메일 자동 발송)" })
+  @ApiOperation({ summary: "지원자 회원가입 - 가입 완료 후 이메일 인증코드 자동 발송" })
   @ApiResponse({
     status: 201,
     description: "회원가입 성공, 인증 이메일 발송됨",
   })
   @ApiResponse({ status: 409, description: "이미 등록된 이메일" })
   @ResponseMessage("회원가입이 완료되었습니다. 이메일 인증을 진행해주세요.")
-  @ApiOperation({ summary: "지원자 회원가입 - 가입 완료 후 이메일 인증코드 발송" })
-  @ApiOperation({ summary: "Applicant signup - email verification code sent" })
   async applicantSignup(@Body() dto: ApplicantSignupDto) {
     return this.authService.applicantSignup(dto);
   }
@@ -65,12 +64,10 @@ export class AuthController {
   // ===========================
   @Post("applicant/verify-email")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "지원자 이메일 인증 코드 확인" })
+  @ApiOperation({ summary: "지원자 회원가입 - 이메일 인증코드 확인" })
   @ApiResponse({ status: 200, description: "이메일 인증 성공" })
   @ApiResponse({ status: 400, description: "코드 불일치 또는 만료" })
   @ResponseMessage("이메일 인증이 완료되었습니다.")
-  @ApiOperation({ summary: "지원자 회원가입 이메일 인증코드 확인" })
-  @ApiOperation({ summary: "Applicant signup - verify email code" })
   async verifyEmail(@Body() dto: VerifyEmailDto) {
     return this.authService.verifyEmail(dto);
   }
@@ -80,12 +77,10 @@ export class AuthController {
   // ===========================
   @Post("applicant/login")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "지원자 로그인" })
+  @ApiOperation({ summary: "지원자 로그인 - 이메일/비밀번호 (가입 시 이메일 인증 필요)" })
   @ApiResponse({ status: 200, description: "로그인 성공" })
   @ApiResponse({ status: 401, description: "인증 실패" })
   @ResponseMessage("로그인에 성공했습니다.")
-  @ApiOperation({ summary: "지원자 로그인 - 이메일/비밀번호 로그인 (가입 시 이메일 인증 필요)" })
-  @ApiOperation({ summary: "Applicant login - email and password" })
   async applicantLogin(@Body() dto: ApplicantLoginDto) {
     return this.authService.applicantLogin(dto);
   }
@@ -94,26 +89,24 @@ export class AuthController {
   // 기업 회원가입
   // ===========================
   @Post("company/signup")
-  @ApiOperation({ summary: "기업 회원가입 (사업자등록번호 필수)" })
+  @ApiOperation({
+    summary: "기업대표 회원가입 3단계(최종) - 사업자 인증 + 본인 이메일 인증 토큰 검증 후 계정 생성",
+  })
   @ApiResponse({ status: 201, description: "기업 회원가입 성공" })
   @ApiResponse({
     status: 409,
     description: "이미 등록된 이메일 또는 사업자등록번호",
   })
   @ResponseMessage("기업 회원가입이 완료되었습니다.")
-  @ApiOperation({ summary: "기업대표 회원가입 - 사업자 인증 후 이메일 인증코드 확인" })
-  @ApiOperation({ summary: "Company representative signup - business verification and email verification" })
   async companySignup(@Body() dto: CompanySignupDto) {
     return this.authService.companySignup(dto);
   }
 
   @Post("company/signup/business/verify")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "기업가입 1단계 - 사업자 정보 인증" })
+  @ApiOperation({ summary: "기업대표 회원가입 1단계 - 사업자등록번호 진위 확인" })
   @ApiResponse({ status: 200, description: "사업자 정보 인증 성공" })
   @ApiResponse({ status: 400, description: "사업자 정보 인증 실패" })
-  @ApiOperation({ summary: "기업대표 회원가입 1단계 - 사업자 정보 인증" })
-  @ApiOperation({ summary: "Company representative signup step 1 - verify business information" })
   async verifyCompanyBusiness(@Body() dto: CompanyBusinessVerifyDto) {
     return this.authService.verifyCompanyBusiness(dto);
   }
@@ -123,12 +116,10 @@ export class AuthController {
   // ===========================
   @Post("company/login")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "CEO 로그인 1단계 - 이메일/비밀번호 인증" })
+  @ApiOperation({ summary: "기업대표 로그인 1단계 - 이메일/비밀번호 확인 후 본인 이메일로 인증코드 발송" })
   @ApiResponse({ status: 200, description: "임시 토큰 발급 성공" })
   @ApiResponse({ status: 401, description: "인증 실패" })
   @ResponseMessage("인증에 성공했습니다. OTP를 확인해주세요.")
-  @ApiOperation({ summary: "기업대표 로그인 1단계 - 이메일/비밀번호 확인 후 이메일 인증코드 발송" })
-  @ApiOperation({ summary: "Company representative login step 1 - email/password, then email code" })
   async companyLogin(@Body() dto: CompanyLoginDto) {
     return this.authService.companyLoginStep1(dto);
   }
@@ -138,60 +129,61 @@ export class AuthController {
   // ===========================
   @Post("company/otp/verify")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "CEO 로그인 2단계 - OTP 검증" })
+  @ApiOperation({ summary: "기업대표 로그인 2단계 - 본인 이메일 인증코드 확인 후 토큰 발급" })
   @ApiResponse({ status: 200, description: "OTP 검증 성공, 토큰 발급" })
   @ApiResponse({ status: 401, description: "OTP 검증 실패" })
   @ResponseMessage("OTP 인증에 성공했습니다.")
-  @ApiOperation({ summary: "기업대표 로그인 2단계 - 이메일 인증코드 확인 후 토큰 발급" })
-  @ApiOperation({ summary: "Company representative login step 2 - verify email code" })
   async companyOtpVerify(@Body() dto: CompanyOtpVerifyDto) {
     return this.authService.companyOtpVerify(dto);
   }
 
   // ===========================
-  // HR 매니저 등록 Step1 (회사 대표 이메일 인증 코드 발송)
+  // HR 매니저 등록 Step1 (대표 로그인 필수 — 본인 이메일 인증 코드 발송)
   // ===========================
   @Post("hr/register")
   @HttpCode(HttpStatus.OK)
-  @ApiResponse({ status: 200, description: "Temporary token issued and verification code sent to the HR user's personal email" })
-  @ApiOperation({ summary: "HR signup - company code and personal email verification" })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth("access-token")
   @ApiOperation({
-    summary:
-      "HR 매니저 등록 1단계 - 회사 대표 이메일 인증 코드 발송 (COMPANY 권한 필요)",
+    summary: "인사팀장 등록 1단계 - 대표가 로그인한 상태에서 HR 정보 입력, 본인 이메일로 인증코드 발송 (COMPANY 권한 필요)",
   })
   @ApiResponse({
     status: 200,
-    description: "임시 토큰 발급 성공, 회사 대표 이메일로 인증 코드 발송",
+    description: "임시 토큰 발급 성공, 대표 본인 이메일로 인증 코드 발송",
   })
   @ApiResponse({ status: 401, description: "인증 실패" })
-  @ApiResponse({ status: 409, description: "이미 등록된 전화번호" })
-  @ResponseMessage("인증번호가 회사 대표 이메일로 발송되었습니다.")
-  @ApiOperation({ summary: "인사팀장 가입 1단계 - 회사코드 확인 후 회사 공식 이메일로 인증코드 발송" })
-  @ApiOperation({ summary: "인사팀장 가입 1단계 - 회사코드 확인 후 본인 이메일로 인증코드 발송" })
-  @ApiOperation({ summary: "HR signup - company code and personal email verification" })
-  async hrRegister(@Body() dto: HrRegisterDto) {
-    return this.authService.hrRegister(dto);
+  @ApiResponse({ status: 403, description: "대표만 인사팀장을 등록할 수 있음" })
+  @ApiResponse({ status: 409, description: "이미 등록된 이메일" })
+  @ResponseMessage("인증번호가 대표 이메일로 발송되었습니다.")
+  async hrRegister(@Body() dto: HrRegisterDto, @Req() req: Request) {
+    const user = req.user as JwtPayload;
+    if (user.role !== "COMPANY") {
+      throw new ForbiddenException("대표만 인사팀장을 등록할 수 있습니다.");
+    }
+    return this.authService.hrRegister(dto, user.sub);
   }
 
   // ===========================
-  // HR 매니저 등록 Step2 (대표 이메일 인증 코드 검증 → HR 생성)
+  // HR 매니저 등록 Step2 (대표 본인 이메일 인증 코드 검증 → HR 생성)
   // ===========================
   @Post("hr/register/verify")
   @HttpCode(HttpStatus.OK)
-  @ApiResponse({ status: 200, description: "Personal email verified and HR account created" })
-  @ApiOperation({ summary: "HR signup step 2 - verify personal email and create account" })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth("access-token")
   @ApiOperation({
-    summary:
-      "HR 매니저 등록 2단계 - 대표 이메일 인증 코드 검증 및 HR 계정 생성 (COMPANY 권한 필요)",
+    summary: "인사팀장 등록 2단계 - 대표 본인 이메일 인증 코드 검증 및 HR 계정 생성 (COMPANY 권한 필요)",
   })
   @ApiResponse({ status: 200, description: "HR 매니저 등록 완료" })
   @ApiResponse({ status: 400, description: "유효하지 않은 토큰" })
-  @ApiResponse({ status: 401, description: "대표 이메일 인증 코드 검증 실패" })
+  @ApiResponse({ status: 401, description: "인증 코드 검증 실패" })
+  @ApiResponse({ status: 403, description: "본인이 시작한 등록이 아님" })
   @ResponseMessage("HR 매니저 등록이 완료되었습니다.")
-  @ApiOperation({ summary: "인사팀장 가입 2단계 - 회사 공식 이메일 인증코드 확인 후 계정 생성" })
-  @ApiOperation({ summary: "HR signup step 2 - verify personal email and create account" })
-  async hrRegisterVerify(@Body() dto: HrOtpVerifyDto) {
-    return this.authService.hrRegisterVerify(dto);
+  async hrRegisterVerify(@Body() dto: HrOtpVerifyDto, @Req() req: Request) {
+    const user = req.user as JwtPayload;
+    if (user.role !== "COMPANY") {
+      throw new ForbiddenException("대표만 인사팀장 등록을 완료할 수 있습니다.");
+    }
+    return this.authService.hrRegisterVerify(dto, user.sub);
   }
 
   // ===========================
@@ -199,11 +191,8 @@ export class AuthController {
   // ===========================
   @Post("hr/login")
   @HttpCode(HttpStatus.OK)
-  @ApiResponse({ status: 200, description: "Temporary token issued and verification code sent to the company's official email" })
-  @ApiOperation({ summary: "HR login step 1 - email/password, then company email verification" })
   @ApiOperation({
-    summary:
-      "HR 매니저 로그인 1단계 - 전화번호/기업코드 확인 후 대표 이메일 인증 코드 발송",
+    summary: "인사팀장 로그인 1단계 - 본인 email/password 확인 후 대표 이메일로 인증코드 발송",
   })
   @ApiResponse({
     status: 200,
@@ -211,8 +200,6 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: "인증 실패" })
   @ResponseMessage("인증번호가 회사 대표 이메일로 발송되었습니다.")
-  @ApiOperation({ summary: "인사팀장 로그인 1단계 - 등록된 회사의 공식 이메일로 인증코드 발송" })
-  @ApiOperation({ summary: "HR login step 1 - email/password, then company email verification" })
   async hrLogin(@Body() dto: HrLoginDto) {
     return this.authService.hrLogin(dto);
   }
@@ -222,10 +209,8 @@ export class AuthController {
   // ===========================
   @Post("hr/otp/verify")
   @HttpCode(HttpStatus.OK)
-  @ApiResponse({ status: 200, description: "Company official email verified and access tokens issued" })
-  @ApiOperation({ summary: "HR login step 2 - verify company official email code" })
   @ApiOperation({
-    summary: "HR 매니저 로그인 2단계 - 대표 이메일 인증 코드 검증 및 토큰 발급",
+    summary: "인사팀장 로그인 2단계 - 대표 이메일 인증 코드 검증 후 토큰 발급",
   })
   @ApiResponse({
     status: 200,
@@ -234,8 +219,6 @@ export class AuthController {
   @ApiResponse({ status: 400, description: "유효하지 않은 토큰" })
   @ApiResponse({ status: 401, description: "OTP 검증 실패" })
   @ResponseMessage("로그인에 성공했습니다.")
-  @ApiOperation({ summary: "인사팀장 로그인 2단계 - 회사 공식 이메일 인증코드 확인 후 토큰 발급" })
-  @ApiOperation({ summary: "HR login step 2 - verify company official email code" })
   async hrOtpVerify(@Body() dto: HrOtpVerifyDto) {
     return this.authService.hrOtpVerify(dto);
   }
@@ -258,7 +241,7 @@ export class AuthController {
   // ===========================
   @Post("company/signup/otp/request")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "회원가입 대표 OTP 요청·재요청" })
+  @ApiOperation({ summary: "기업대표 회원가입 2단계 - 본인 이메일로 인증코드 발송(재발송 포함)" })
   @ApiResponse({ status: 200, description: "OTP 발송 성공" })
   @ResponseMessage("OTP가 발송되었습니다.")
   async requestCompanySignupOtp(@Body() dto: CompanySignupOtpRequestDto) {
@@ -270,7 +253,7 @@ export class AuthController {
   // ===========================
   @Post("company/signup/otp/verify")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "회원가입 대표 OTP 인증" })
+  @ApiOperation({ summary: "기업대표 회원가입 2단계 - 본인 이메일 인증코드 확인, 최종가입용 토큰 발급" })
   @ApiResponse({ status: 200, description: "OTP 인증 성공" })
   @ApiResponse({ status: 401, description: "OTP 인증 실패" })
   @ResponseMessage("OTP 인증이 완료되었습니다.")

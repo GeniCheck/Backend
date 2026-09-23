@@ -42,14 +42,14 @@ describe('AuthController', () => {
     expect(authServiceMock.requestCompanySignupOtp).toHaveBeenCalledWith(dto);
   });
 
-  it('uses the linked company email for HR registration', async () => {
+  it('uses the authenticated company for HR registration', async () => {
     const dto = {
-      companyCode: 'COMP001',
       name: '홍길동',
       email: 'hr@company.com',
       password: 'Pass1!',
     };
-    await controller.hrRegister(dto);
-    expect(authServiceMock.hrRegister).toHaveBeenCalledWith(dto);
+    const req = { user: { sub: 'company-1', role: 'COMPANY' } } as any;
+    await controller.hrRegister(dto, req);
+    expect(authServiceMock.hrRegister).toHaveBeenCalledWith(dto, 'company-1');
   });
 });

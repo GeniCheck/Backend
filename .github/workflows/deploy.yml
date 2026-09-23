@@ -49,7 +49,7 @@ jobs:
           host: ${{ secrets.OCI_HOST }}
           username: ${{ secrets.OCI_USERNAME || 'ubuntu' }}
           key: ${{ secrets.OCI_SSH_KEY }}
-          command_timeout: 20m
+          command_timeout: 40m
           script: |
             cd /home/ubuntu/Backend
             git pull origin ${{ github.ref_name }}

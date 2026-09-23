@@ -81,10 +81,13 @@ model EmailVerification {
   @@map("email_verifications")
 }
 
-// OTP 인증 (기업 CEO 로그인 2단계)
+// OTP 인증 (기업 CEO 로그인, 인사팀장 로그인, 비밀번호 재설정 등 이메일 기반 2차 인증 전체 공용)
 model OtpVerification {
   id        String   @id @default(uuid())
   email     String?
+  // 같은 이메일로 여러 용도의 OTP가 동시에 발급될 수 있어(대표 로그인 중 HR 로그인 등)
+  // purpose로 구분하지 않으면 서로의 미사용 OTP를 무효화시켜버림
+  purpose   String?
   code      String
   expiresAt DateTime
   failCount Int      @default(0)

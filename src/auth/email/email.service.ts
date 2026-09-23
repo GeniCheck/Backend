@@ -66,12 +66,52 @@ export class EmailService {
     }
   }
 
-  async sendHrRegistrationEmail(to: string, code: string): Promise<void> {
-    const subject = "[GeniCheck] 인사팀장 회원가입 인증번호";
+  async sendHrInviteEmail(to: string, token: string, companyName: string): Promise<void> {
+    const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3001";
+    const inviteUrl = `${frontendUrl}/hr/accept-invite?token=${token}`;
+    const subject = `[GeniCheck] ${companyName}에서 인사팀장으로 초대했습니다`;
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
-        <h2 style="color: #333;">인사팀장 회원가입 인증번호</h2>
-        <p>인사팀장 회원가입을 진행하려면 아래 인증번호를 입력해주세요.</p>
+        <h2 style="color: #333;">인사팀장 계정 초대</h2>
+        <p><strong>${companyName}</strong>의 대표가 회원님을 인사팀장으로 등록했습니다. 아래 버튼을 눌러 본인 비밀번호를 설정하고 가입을 완료해주세요.</p>
+        <div style="margin: 24px 0;">
+          <a href="${inviteUrl}" style="
+            display: inline-block;
+            background: #4F46E5;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: bold;
+          ">가입 완료하기</a>
+        </div>
+        <p style="color: #888; font-size: 13px;">
+          이 초대는 <strong>3일</strong> 동안 유효합니다.<br/>
+          본인이 요청하지 않았거나 잘못 받은 메일이라면 무시해주세요.
+        </p>
+      </div>
+    `;
+
+    try {
+      await this.transporter.sendMail({
+        from: this.fromAddress,
+        to,
+        subject,
+        html,
+      });
+      this.logger.log(`HR 초대 이메일 발송 완료: ${to}`);
+    } catch (error) {
+      this.logger.error(`HR 초대 이메일 발송 실패: ${to}`, error);
+      throw error;
+    }
+  }
+
+  async sendPasswordResetEmail(to: string, code: string): Promise<void> {
+    const subject = "[GeniCheck] 비밀번호 재설정 코드";
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #333;">비밀번호 재설정</h2>
+        <p>아래 코드를 입력해 새 비밀번호를 설정해주세요.</p>
         <div style="
           background: #f4f4f4;
           border-radius: 8px;
@@ -86,8 +126,8 @@ export class EmailService {
           ${code}
         </div>
         <p style="color: #888; font-size: 13px;">
-          인증번호는 <strong>3분</strong> 후 만료됩니다.<br/>
-          본인이 요청하지 않았다면 이 메일을 무시해주세요.
+          이 코드는 <strong>10분</strong> 동안 유효합니다.<br/>
+          본인이 요청하지 않았다면 이 이메일을 무시하고, 비밀번호를 아무도 모르는 상태로 유지해주세요.
         </p>
       </div>
     `;
@@ -99,9 +139,9 @@ export class EmailService {
         subject,
         html,
       });
-      this.logger.log(`HR 가입 인증 이메일 발송 완료: ${to}`);
+      this.logger.log(`비밀번호 재설정 이메일 발송 완료: ${to}`);
     } catch (error) {
-      this.logger.error(`HR 가입 인증 이메일 발송 실패: ${to}`, error);
+      this.logger.error(`비밀번호 재설정 이메일 발송 실패: ${to}`, error);
       throw error;
     }
   }

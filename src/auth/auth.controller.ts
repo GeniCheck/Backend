@@ -18,6 +18,7 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import { Request } from "express";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { AuthService } from "./auth.service";
 import {
   ApplicantSignupDto,
@@ -29,11 +30,14 @@ import {
   CompanySignupOtpVerifyDto,
   CompanyBusinessVerifyDto,
   HrLoginDto,
-  HrRegisterDto,
+  HrInviteDto,
+  HrAcceptInviteDto,
   HrOtpVerifyDto,
   RefreshTokenDto,
   VerifyEmailDto,
   ResendOtpDto,
+  PasswordResetRequestDto,
+  PasswordResetConfirmDto,
 } from "./dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { JwtPayload } from "./strategies/jwt.strategy";
@@ -41,6 +45,7 @@ import { ResponseMessage } from "../common/decorators/response-message.decorator
 
 @ApiTags("Auth")
 @Controller("auth")
+@UseGuards(ThrottlerGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
@@ -77,6 +82,7 @@ export class AuthController {
   // ===========================
   @Post("applicant/login")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: "지원자 로그인 - 이메일/비밀번호 (가입 시 이메일 인증 필요)" })
   @ApiResponse({ status: 200, description: "로그인 성공" })
   @ApiResponse({ status: 401, description: "인증 실패" })
@@ -116,6 +122,7 @@ export class AuthController {
   // ===========================
   @Post("company/login")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: "기업대표 로그인 1단계 - 이메일/비밀번호 확인 후 본인 이메일로 인증코드 발송" })
   @ApiResponse({ status: 200, description: "임시 토큰 발급 성공" })
   @ApiResponse({ status: 401, description: "인증 실패" })
@@ -129,6 +136,7 @@ export class AuthController {
   // ===========================
   @Post("company/otp/verify")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: "기업대표 로그인 2단계 - 본인 이메일 인증코드 확인 후 토큰 발급" })
   @ApiResponse({ status: 200, description: "OTP 검증 성공, 토큰 발급" })
   @ApiResponse({ status: 401, description: "OTP 검증 실패" })
@@ -138,52 +146,44 @@ export class AuthController {
   }
 
   // ===========================
-  // HR 매니저 등록 Step1 (대표 로그인 필수 — 본인 이메일 인증 코드 발송)
+  // HR 매니저 초대 (대표 로그인 필수 — HR 본인 이메일로 초대 메일 발송)
   // ===========================
-  @Post("hr/register")
+  @Post("hr/invite")
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("access-token")
   @ApiOperation({
-    summary: "인사팀장 등록 1단계 - 대표가 로그인한 상태에서 HR 정보 입력, 본인 이메일로 인증코드 발송 (COMPANY 권한 필요)",
+    summary: "인사팀장 초대 - 대표가 로그인한 상태에서 이름/이메일만 입력, HR 본인 이메일로 초대 메일 발송 (COMPANY 권한 필요)",
   })
-  @ApiResponse({
-    status: 200,
-    description: "임시 토큰 발급 성공, 대표 본인 이메일로 인증 코드 발송",
-  })
+  @ApiResponse({ status: 200, description: "초대 메일 발송 성공" })
   @ApiResponse({ status: 401, description: "인증 실패" })
-  @ApiResponse({ status: 403, description: "대표만 인사팀장을 등록할 수 있음" })
+  @ApiResponse({ status: 403, description: "대표만 인사팀장을 초대할 수 있음" })
   @ApiResponse({ status: 409, description: "이미 등록된 이메일" })
-  @ResponseMessage("인증번호가 대표 이메일로 발송되었습니다.")
-  async hrRegister(@Body() dto: HrRegisterDto, @Req() req: Request) {
+  @ResponseMessage("초대 메일이 발송되었습니다.")
+  async hrInvite(@Body() dto: HrInviteDto, @Req() req: Request) {
     const user = req.user as JwtPayload;
     if (user.role !== "COMPANY") {
-      throw new ForbiddenException("대표만 인사팀장을 등록할 수 있습니다.");
+      throw new ForbiddenException("대표만 인사팀장을 초대할 수 있습니다.");
     }
-    return this.authService.hrRegister(dto, user.sub);
+    return this.authService.hrInvite(dto, user.sub);
   }
 
   // ===========================
-  // HR 매니저 등록 Step2 (대표 본인 이메일 인증 코드 검증 → HR 생성)
+  // HR 매니저 초대 수락 (HR 본인이 비밀번호 설정 → 계정 생성)
   // ===========================
-  @Post("hr/register/verify")
+  @Post("hr/accept-invite")
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth("access-token")
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({
-    summary: "인사팀장 등록 2단계 - 대표 본인 이메일 인증 코드 검증 및 HR 계정 생성 (COMPANY 권한 필요)",
+    summary: "인사팀장 초대 수락 - 초대 메일의 링크를 통해 HR 본인이 비밀번호를 설정하고 가입 완료",
   })
-  @ApiResponse({ status: 200, description: "HR 매니저 등록 완료" })
+  @ApiResponse({ status: 200, description: "HR 매니저 계정 생성 완료" })
   @ApiResponse({ status: 400, description: "유효하지 않은 토큰" })
-  @ApiResponse({ status: 401, description: "인증 코드 검증 실패" })
-  @ApiResponse({ status: 403, description: "본인이 시작한 등록이 아님" })
-  @ResponseMessage("HR 매니저 등록이 완료되었습니다.")
-  async hrRegisterVerify(@Body() dto: HrOtpVerifyDto, @Req() req: Request) {
-    const user = req.user as JwtPayload;
-    if (user.role !== "COMPANY") {
-      throw new ForbiddenException("대표만 인사팀장 등록을 완료할 수 있습니다.");
-    }
-    return this.authService.hrRegisterVerify(dto, user.sub);
+  @ApiResponse({ status: 401, description: "초대 링크 만료 또는 무효" })
+  @ApiResponse({ status: 409, description: "이미 가입이 완료된 이메일" })
+  @ResponseMessage("인사팀장 계정이 생성되었습니다. 로그인해주세요.")
+  async hrAcceptInvite(@Body() dto: HrAcceptInviteDto) {
+    return this.authService.hrAcceptInvite(dto);
   }
 
   // ===========================
@@ -191,6 +191,7 @@ export class AuthController {
   // ===========================
   @Post("hr/login")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({
     summary: "인사팀장 로그인 1단계 - 본인 email/password 확인 후 대표 이메일로 인증코드 발송",
   })
@@ -209,6 +210,7 @@ export class AuthController {
   // ===========================
   @Post("hr/otp/verify")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({
     summary: "인사팀장 로그인 2단계 - 대표 이메일 인증 코드 검증 후 토큰 발급",
   })
@@ -266,11 +268,39 @@ export class AuthController {
   // ===========================
   @Post("otp/resend")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: "로그인 OTP 재발송" })
   @ApiResponse({ status: 200, description: "OTP 재발송 성공" })
   @ResponseMessage("OTP가 재발송되었습니다.")
   async resendOtp(@Body() dto: ResendOtpDto) {
     return this.authService.resendOtp(dto);
+  }
+
+  // ===========================
+  // 비밀번호 재설정 요청 (대표/HR 본인 이메일로 코드 발송)
+  // ===========================
+  @Post("password/reset/request")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @ApiOperation({ summary: "비밀번호 재설정 요청 - 대표 또는 HR 본인 이메일로 재설정 코드 발송" })
+  @ApiResponse({ status: 200, description: "요청 접수 (계정 존재 여부와 무관하게 동일 응답)" })
+  @ResponseMessage("등록된 이메일이면 비밀번호 재설정 코드가 발송되었습니다.")
+  async requestPasswordReset(@Body() dto: PasswordResetRequestDto) {
+    return this.authService.passwordResetRequest(dto);
+  }
+
+  // ===========================
+  // 비밀번호 재설정 확인
+  // ===========================
+  @Post("password/reset/confirm")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @ApiOperation({ summary: "비밀번호 재설정 확인 - 본인 이메일로 받은 코드 검증 후 새 비밀번호 반영" })
+  @ApiResponse({ status: 200, description: "비밀번호 재설정 성공" })
+  @ApiResponse({ status: 401, description: "코드 만료/불일치 또는 계정 없음" })
+  @ResponseMessage("비밀번호가 재설정되었습니다.")
+  async confirmPasswordReset(@Body() dto: PasswordResetConfirmDto) {
+    return this.authService.passwordResetConfirm(dto);
   }
 
   // ===========================

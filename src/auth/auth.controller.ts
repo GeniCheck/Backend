@@ -53,6 +53,7 @@ export class AuthController {
   // 지원자 회원가입
   // ===========================
   @Post("applicant/signup")
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: "지원자 회원가입 - 가입 완료 후 이메일 인증코드 자동 발송" })
   @ApiResponse({
     status: 201,
@@ -150,6 +151,7 @@ export class AuthController {
   // ===========================
   @Post("hr/invite")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("access-token")
   @ApiOperation({
@@ -243,6 +245,7 @@ export class AuthController {
   // ===========================
   @Post("company/signup/otp/request")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: "기업대표 회원가입 2단계 - 본인 이메일로 인증코드 발송(재발송 포함)" })
   @ApiResponse({ status: 200, description: "OTP 발송 성공" })
   @ResponseMessage("OTP가 발송되었습니다.")

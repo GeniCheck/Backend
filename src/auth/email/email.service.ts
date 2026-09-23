@@ -24,6 +24,13 @@ export class EmailService {
     });
   }
 
+  // FRONTEND_URL이 .env에 빈 문자열("")로 설정된 경우 process.env.X ?? fallback은
+  // 빈 문자열을 "설정됨"으로 보고 fallback하지 않아 링크가 깨짐 — 여기서 한 번에 방지
+  private getFrontendUrl(): string {
+    const configured = this.configService.get<string>("FRONTEND_URL")?.trim();
+    return configured || "http://localhost:3001";
+  }
+
   async sendVerificationEmail(to: string, code: string): Promise<void> {
     const subject = "[GeniCheck] 이메일 인증 코드";
     const html = `
@@ -67,8 +74,7 @@ export class EmailService {
   }
 
   async sendHrInviteEmail(to: string, token: string, companyName: string): Promise<void> {
-    const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3001";
-    const inviteUrl = `${frontendUrl}/hr/accept-invite?token=${token}`;
+    const inviteUrl = `${this.getFrontendUrl()}/hr/accept-invite?token=${token}`;
     const subject = `[GeniCheck] ${companyName}에서 인사팀장으로 초대했습니다`;
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
@@ -228,8 +234,7 @@ export class EmailService {
   }
 
   async sendEvaluationLinkEmail(to: string, token: string): Promise<void> {
-    const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3001";
-    const evaluationUrl = `${frontendUrl}/evaluate/${token}`;
+    const evaluationUrl = `${this.getFrontendUrl()}/evaluate/${token}`;
     const subject = "[GeniCheck] 평가 링크가 도착했습니다";
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">

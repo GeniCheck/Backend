@@ -2,6 +2,7 @@ import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -9,6 +10,14 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
+
+  // nginx 리버스 프록시 뒤에서 실행되므로, X-Forwarded-For를 신뢰해야
+  // req.ip가 nginx 내부 IP가 아니라 실제 접속자 IP로 잡힘.
+  // 이게 없으면 rate limit(@nestjs/throttler)이 IP별이 아니라 전체 트래픽 합산으로 걸림.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
+  // 기본 보안 헤더 (CSP는 Swagger UI 인라인 스크립트와 충돌해서 끔 — API 서버라 프론트 XSS 방어는 별도)
+  app.use(helmet({ contentSecurityPolicy: false }));
 
   // 전역 prefix
   app.setGlobalPrefix('api/v1');

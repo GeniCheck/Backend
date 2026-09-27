@@ -28,7 +28,7 @@ export class EmailService {
   // 빈 문자열을 "설정됨"으로 보고 fallback하지 않아 링크가 깨짐 — 여기서 한 번에 방지
   private getFrontendUrl(): string {
     const configured = this.configService.get<string>("FRONTEND_URL")?.trim();
-    return configured || "http://localhost:3001";
+    return configured || "http://localhost:5180";
   }
 
   async sendVerificationEmail(to: string, code: string): Promise<void> {

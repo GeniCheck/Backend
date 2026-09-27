@@ -1,0 +1,34 @@
+name: Manual NTS API Key Check (one-off)
+
+# 수동으로 버튼을 눌러야만 실행됨 (push로는 절대 실행 안 됨)
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Check NTS_API_KEY validity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test NTS_API_KEY without printing it
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USERNAME || 'ubuntu' }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            cd /home/ubuntu/Backend
+            KEY=$(grep '^NTS_API_KEY=' .env | cut -d '=' -f2-)
+            if [ -z "$KEY" ]; then
+              echo "RESULT: NTS_API_KEY is empty in .env"
+            else
+              echo "RESULT: NTS_API_KEY is set (length: ${#KEY} chars) -- testing against real API..."
+              HTTP_CODE=$(curl -s -o /tmp/nts_response.json -w '%{http_code}' -X POST \
+                "https://api.odcloud.kr/api/nts-businessman/v1/validate?serviceKey=${KEY}&returnType=JSON" \
+                -H 'Content-Type: application/json' \
+                -d '{"businesses":[{"b_no":"1234567890","start_dt":"20200101","p_nm":"test"}]}')
+              echo "RESULT: HTTP status = $HTTP_CODE"
+              echo "RESULT: response body (no key inside this) ="
+              cat /tmp/nts_response.json
+              rm -f /tmp/nts_response.json
+            fi

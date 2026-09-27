@@ -271,59 +271,10 @@ export class AuthService {
       throw new ConflictException("이미 등록된 사업자등록번호입니다.");
     }
 
-    // NTS 사업자등록 진위확인 API 호출
-    // TODO: 테스트 완료 후 주석 해제 필요
-    const serviceKey = this.configService.get<string>("NTS_API_KEY") ?? "";
-
-    // 테스트 환경에서는 NTS API 검증 스킵
-    if (this.configService.get<string>("NODE_ENV") === "production") {
-      try {
-        const ntsRes = await fetch(
-          `https://api.odcloud.kr/api/nts-businessman/v1/validate?serviceKey=${encodeURIComponent(serviceKey)}&returnType=JSON`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              businesses: [
-                {
-                  b_no: normalizedBizNumber,
-                  p_nm: dto.representativeName,
-                  start_dt: dto.startDate,
-                },
-              ],
-            }),
-          },
-        );
-
-        if (!ntsRes.ok) {
-          throw new BadRequestException(
-            "사업자 정보 확인 중 오류가 발생했습니다.",
-          );
-        }
-
-        const ntsData = (await ntsRes.json()) as {
-          data: Array<{ valid: string; valid_msg: string }>;
-        };
-
-        const result = ntsData?.data?.[0];
-        if (!result || result.valid !== "01") {
-          throw new BadRequestException("사업자 정보가 일치하지 않습니다.");
-        }
-      } catch (err) {
-        // BadRequestException은 그대로 re-throw, 나머지 네트워크 오류 처리
-        if (err instanceof BadRequestException) throw err;
-        throw new BadRequestException(
-          "사업자 정보 확인 중 오류가 발생했습니다.",
-        );
-      }
-    }
-    // development/test 환경에서는 사업자 정보 검증 스킵 (로그로만 표시)
-    else {
-      console.log(
-        `[DEV] NTS API 검증 스킵: ${normalizedBizNumber} / ${dto.representativeName}`,
-      );
-    }
-
+    // 국세청 진위확인은 1단계(verifyCompanyBusiness -> validateBusinessRegistration)에서
+    // 이미 실시간으로 수행됨. businessVerificationToken이 "그 검증이 정확히 이 사업자
+    // 정보로 통과했다"는 서버 서명 증거라, 여기서 같은 API를 다시 호출할 필요가 없음
+    // (10분 TTL 내 재확인이라 실질적 이득도 없고, 중복 호출/중복 유지보수 부담만 생김)
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     // 충돌 없는 고유 companyCode 생성
@@ -1232,7 +1183,9 @@ export class AuthService {
   ) {
     const serviceKey = this.configService.get<string>("NTS_API_KEY") ?? "";
 
-    if (this.configService.get<string>("NODE_ENV") !== "production") {
+    // NODE_ENV(운영/개발 여부)와 별개로, 실제 국세청 검증 여부만 따로 켜고 끄는 스위치.
+    // 개발이 끝나 팀 전체가 실제 사업자번호로만 테스트할 준비가 되면 true로 바꾼다.
+    if (this.configService.get<string>("NTS_VALIDATION_ENABLED") !== "true") {
       return;
     }
 

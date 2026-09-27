@@ -54,5 +54,6 @@ jobs:
             cd /home/ubuntu/Backend
             git pull origin ${{ github.ref_name }}
             grep -q '^FRONTEND_URL=' .env && sed -i 's|^FRONTEND_URL=.*|FRONTEND_URL=https://genicheck.vercel.app|' .env || echo 'FRONTEND_URL=https://genicheck.vercel.app' >> .env
+            grep -q '^NODE_ENV=' .env && sed -i 's|^NODE_ENV=.*|NODE_ENV=production|' .env || echo 'NODE_ENV=production' >> .env
             sudo docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
             sudo docker image prune -f

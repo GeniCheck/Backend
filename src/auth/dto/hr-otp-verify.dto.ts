@@ -9,7 +9,7 @@ export class HrOtpVerifyDto {
 
   @ApiProperty({
     example: "123456",
-    description: "회사 대표 이메일 인증 코드 (숫자 6자리)",
+    description: "본인 이메일로 받은 인증 코드 (숫자 6자리)",
   })
   @IsString()
   @Length(6, 6, { message: "OTP 코드는 6자리여야 합니다." })

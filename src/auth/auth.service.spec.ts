@@ -154,6 +154,22 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     expect(res).toEqual({ message: "OTP가 재발송되었습니다." });
   });
 
+  it("3-1. resendOtp (HR 로그인 OTP는 본인 이메일로 재발송)", async () => {
+    prismaMock.otpVerification.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.otpVerification.create.mockResolvedValue({ id: "otp-3" });
+
+    jwtMock.verify.mockReturnValue({ sub: "hr-1", purpose: "hr_otp_verify" });
+    prismaMock.hrManager.findUnique.mockResolvedValue({ email: "hr@company.com" });
+
+    const res = await service.resendOtp({ tempToken: "mock-temp-token" });
+
+    expect(res).toEqual({ message: "OTP가 재발송되었습니다." });
+    expect(emailMock.sendHrLoginEmail).toHaveBeenCalledWith(
+      "hr@company.com",
+      expect.any(String),
+    );
+  });
+
   it("4. hrInvite (대표 로그인 상태에서 HR 본인 이메일로 초대 메일 발송) 정상 작동", async () => {
     prismaMock.hrManager.findUnique.mockResolvedValue(null);
     prismaMock.company.findUnique.mockResolvedValue({
@@ -385,17 +401,12 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     ).rejects.toThrow("해당 초대를 취소할 권한이 없습니다.");
   });
 
-  it("7. hrLogin (회사 대표 이메일로 로그인 OTP 발송) 정상 작동", async () => {
-    prismaMock.company.findUnique.mockResolvedValue({
-      id: "comp-1",
-      email: "ceo@company.com",
-    });
+  it("7. hrLogin (본인 이메일로 로그인 OTP 발송) 정상 작동", async () => {
     prismaMock.hrManager.findUnique.mockResolvedValue({
       id: "hr-1",
       email: "hr@company.com",
       password: "hashed-password",
       companyId: "comp-1",
-      company: { email: "ceo@company.com" },
     });
     prismaMock.otpVerification.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.otpVerification.create.mockResolvedValue({ id: "otp-login-1" });
@@ -408,12 +419,13 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
 
     expect(res).toEqual({ tempToken: "mock-temp-token" });
     expect(emailMock.sendHrLoginEmail).toHaveBeenCalledWith(
-      "ceo@company.com",
+      "hr@company.com",
       expect.any(String),
     );
     expect(prismaMock.otpVerification.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        email: "ceo@company.com",
+        email: "hr@company.com",
+        purpose: "hr_login",
         code: expect.any(String),
       }),
     });
@@ -793,11 +805,11 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
   // ===========================
   // 인사팀장 로그인 Step2
   // ===========================
-  it("hrOtpVerify: 대표(회사) 이메일 기준 hr_login purpose로 조회 후 토큰 발급", async () => {
+  it("hrOtpVerify: 본인 이메일 기준 hr_login purpose로 조회 후 토큰 발급", async () => {
     jwtMock.verify.mockReturnValue({ sub: "hr-1", purpose: "hr_otp_verify" });
     prismaMock.hrManager.findUnique.mockResolvedValue({
       id: "hr-1",
-      company: { email: "ceo@company.com" },
+      email: "hr@company.com",
     });
     prismaMock.otpVerification.findFirst.mockResolvedValue({
       id: "otp-2",
@@ -816,7 +828,7 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     expect(res.accessToken).toBe("mock-jwt-token");
     expect(prismaMock.otpVerification.findFirst).toHaveBeenCalledWith({
       where: expect.objectContaining({
-        email: "ceo@company.com",
+        email: "hr@company.com",
         purpose: "hr_login",
       }),
       orderBy: { createdAt: "desc" },

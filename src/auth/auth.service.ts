@@ -623,14 +623,13 @@ export class AuthService {
   }
 
   // ===========================
-  // HR 매니저 로그인 Step1 (전화번호/기업코드 → OTP 발송)
+  // HR 매니저 로그인 Step1 (본인 email/password → 본인 이메일로 OTP 발송)
   // ===========================
   async hrLogin(dto: HrLoginDto) {
     const hrManager = await this.prisma.hrManager.findUnique({
       where: { email: this.normalizeEmail(dto.email) },
-      include: { company: { select: { email: true } } },
     });
-    if (!hrManager) {
+    if (!hrManager || !hrManager.email) {
       throw new UnauthorizedException("등록된 인사팀장 계정을 찾을 수 없습니다.");
     }
 
@@ -638,24 +637,21 @@ export class AuthService {
       throw new UnauthorizedException("이메일 또는 비밀번호가 올바르지 않습니다.");
     }
 
-    const companyEmail = hrManager.company.email;
-    if (!companyEmail?.trim()) {
-      throw new BadRequestException("소속 회사의 공식 이메일이 등록되어 있지 않습니다.");
-    }
-
+    // HR/대표 권한이 분리돼 있어 대표 승인을 거칠 필요가 없다는 판단에 따라,
+    // 로그인 2차 인증도 본인 이메일로 받도록 변경 (대표 이메일 경유 X)
     await this.prisma.otpVerification.updateMany({
-      where: { email: companyEmail, purpose: "hr_login", isUsed: false },
+      where: { email: hrManager.email, purpose: "hr_login", isUsed: false },
       data: { isUsed: true },
     });
 
     const otpCode = this.generateSixDigitCode();
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
     await this.prisma.otpVerification.create({
-      data: { email: companyEmail, purpose: "hr_login", code: otpCode, expiresAt },
+      data: { email: hrManager.email, purpose: "hr_login", code: otpCode, expiresAt },
     });
 
     try {
-      await this.emailService.sendHrLoginEmail(companyEmail, otpCode);
+      await this.emailService.sendHrLoginEmail(hrManager.email, otpCode);
     } catch {
       // EmailService에서 발송 오류를 기록합니다.
     }
@@ -691,28 +687,18 @@ export class AuthService {
       throw new BadRequestException("유효하지 않은 토큰입니다.");
     }
 
-    // 2. HR 매니저 조회 (회사 대표 이메일 확보)
+    // 2. HR 매니저 조회 (본인 이메일 확보)
     const hrManager = await this.prisma.hrManager.findUnique({
       where: { id: payload.sub },
-      include: {
-        company: {
-          select: { email: true },
-        },
-      },
     });
-    if (!hrManager) {
+    if (!hrManager || !hrManager.email) {
       throw new UnauthorizedException("HR 매니저 정보를 찾을 수 없습니다.");
-    }
-    if (!hrManager.company.email?.trim()) {
-      throw new BadRequestException(
-        "회사 대표 이메일이 등록되어 있지 않습니다.",
-      );
     }
 
     // 3. 유효한 OTP 레코드 조회
     const otpRecord = await this.prisma.otpVerification.findFirst({
       where: {
-        email: hrManager.company.email,
+        email: hrManager.email,
         purpose: "hr_login",
         isUsed: false,
         expiresAt: { gt: new Date() },
@@ -1224,22 +1210,13 @@ export class AuthService {
     if (payload.purpose === "hr_otp_verify") {
       const hrManager = await this.prisma.hrManager.findUnique({
         where: { id: payload.sub },
-        select: {
-          company: {
-            select: { email: true },
-          },
-        },
+        select: { email: true },
       });
-      if (!hrManager) {
+      if (!hrManager?.email) {
         throw new UnauthorizedException("HR 매니저 정보를 찾을 수 없습니다.");
       }
-      if (!hrManager.company.email?.trim()) {
-        throw new BadRequestException(
-          "회사 대표 이메일이 등록되어 있지 않습니다.",
-        );
-      }
       return {
-        value: hrManager.company.email,
+        value: hrManager.email,
         purpose: "hr_login",
       };
     }

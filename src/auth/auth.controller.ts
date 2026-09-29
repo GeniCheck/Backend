@@ -195,14 +195,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({
-    summary: "인사팀장 로그인 1단계 - 본인 email/password 확인 후 대표 이메일로 인증코드 발송",
+    summary: "인사팀장 로그인 1단계 - 본인 email/password 확인 후 본인 이메일로 인증코드 발송",
   })
   @ApiResponse({
     status: 200,
-    description: "임시 토큰 발급 성공, 회사 대표 이메일로 인증 코드 발송",
+    description: "임시 토큰 발급 성공, 본인 이메일로 인증 코드 발송",
   })
   @ApiResponse({ status: 401, description: "인증 실패" })
-  @ResponseMessage("인증번호가 회사 대표 이메일로 발송되었습니다.")
+  @ResponseMessage("인증번호가 이메일로 발송되었습니다.")
   async hrLogin(@Body() dto: HrLoginDto) {
     return this.authService.hrLogin(dto);
   }
@@ -214,11 +214,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({
-    summary: "인사팀장 로그인 2단계 - 대표 이메일 인증 코드 검증 후 토큰 발급",
+    summary: "인사팀장 로그인 2단계 - 본인 이메일 인증 코드 검증 후 토큰 발급",
   })
   @ApiResponse({
     status: 200,
-    description: "대표 이메일 인증 코드 검증 성공, 토큰 발급",
+    description: "본인 이메일 인증 코드 검증 성공, 토큰 발급",
   })
   @ApiResponse({ status: 400, description: "유효하지 않은 토큰" })
   @ApiResponse({ status: 401, description: "OTP 검증 실패" })

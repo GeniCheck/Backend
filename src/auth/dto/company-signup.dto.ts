@@ -8,10 +8,10 @@ export class CompanySignupDto {
   @MaxLength(50)
   email!: string;
 
-  @ApiProperty({ example: 'Pass1!', description: '비밀번호' })
+  @ApiProperty({ example: 'Pass1!', description: '비밀번호 (6~20자)' })
   @IsString()
   @MinLength(6)
-  @MaxLength(30)
+  @MaxLength(20)
   @Matches(/^[a-zA-Z0-9!@#$%^&*]+$/)
   @Matches(/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])/)
   password!: string;

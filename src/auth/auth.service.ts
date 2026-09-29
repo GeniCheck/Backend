@@ -9,7 +9,7 @@ import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { Prisma } from "@prisma/client";
 import * as bcrypt from "bcrypt";
-import { createHash, randomUUID } from "crypto";
+import { createHash, randomBytes, randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   ApplicantSignupDto,
@@ -480,25 +480,25 @@ export class AuthService {
       throw new UnauthorizedException("기업 정보를 찾을 수 없습니다.");
     }
 
-    // 3. 초대 토큰 발급 (3일, HR 이메일이 곧 초대 수신자이자 향후 로그인 아이디)
-    const inviteToken = this.jwtService.sign(
-      {
-        sub: companyId,
-        purpose: "hr_invite",
-        hrEmail: email,
-        hrName: dto.name,
-      },
-      {
-        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
-        expiresIn: "3d",
-      },
-    );
+    // 3. 같은 이메일로 보낸 이전 대기중 초대는 무효화 (목록에 중복 안 남게)
+    await this.prisma.hrInvite.updateMany({
+      where: { companyId, email, status: "pending" },
+      data: { status: "revoked" },
+    });
 
-    // 4. HR 본인 이메일로 초대 메일 발송 — 이메일이 틀렸다면 여기서 걸러짐(수신 불가)
+    // 4. DB에 초대 기록 생성 (3일 유효) — 목록 조회/취소를 위해 상태를 추적
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
+    await this.prisma.hrInvite.create({
+      data: { companyId, email, name: dto.name, token, expiresAt },
+    });
+
+    // 5. HR 본인 이메일로 초대 메일 발송 — 이메일이 틀렸다면 여기서 걸러짐(수신 불가)
     try {
       await this.emailService.sendHrInviteEmail(
         email,
-        inviteToken,
+        token,
         company.companyName,
       );
     } catch {
@@ -512,47 +512,55 @@ export class AuthService {
   // HR 매니저 초대 수락 (HR 본인이 비밀번호 설정 → 계정 생성)
   // ===========================
   async hrAcceptInvite(dto: HrAcceptInviteDto) {
-    let payload: { sub: string; purpose: string; hrEmail: string; hrName: string };
-    try {
-      payload = this.jwtService.verify(dto.token, {
-        secret: this.configService.get<string>("JWT_ACCESS_SECRET"),
-      });
-    } catch {
+    const invite = await this.prisma.hrInvite.findUnique({
+      where: { token: dto.token },
+    });
+    if (!invite) {
+      throw new UnauthorizedException("초대 링크가 유효하지 않습니다.");
+    }
+
+    if (invite.status !== "pending") {
       throw new UnauthorizedException(
-        "초대 링크가 만료되었거나 유효하지 않습니다. 대표에게 재초대를 요청해주세요.",
+        "이미 처리되었거나 취소된 초대입니다. 대표에게 재초대를 요청해주세요.",
       );
     }
 
-    if (payload.purpose !== "hr_invite") {
-      throw new BadRequestException("유효하지 않은 토큰입니다.");
+    if (invite.expiresAt < new Date()) {
+      await this.prisma.hrInvite.update({
+        where: { id: invite.id },
+        data: { status: "revoked" },
+      });
+      throw new UnauthorizedException(
+        "초대 링크가 만료되었습니다. 대표에게 재초대를 요청해주세요.",
+      );
     }
 
     const existingHr = await this.prisma.hrManager.findUnique({
-      where: { email: payload.hrEmail },
+      where: { email: invite.email },
     });
     if (existingHr) {
       throw new ConflictException("이미 가입이 완료된 이메일입니다.");
-    }
-
-    const company = await this.prisma.company.findUnique({
-      where: { id: payload.sub },
-    });
-    if (!company) {
-      throw new UnauthorizedException("기업 정보를 찾을 수 없습니다.");
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     let hrManager;
     try {
-      hrManager = await this.prisma.hrManager.create({
-        data: {
-          email: payload.hrEmail,
-          password: hashedPassword,
-          name: payload.hrName,
-          companyId: payload.sub,
-        },
-      });
+      const [, createdHr] = await this.prisma.$transaction([
+        this.prisma.hrInvite.update({
+          where: { id: invite.id },
+          data: { status: "accepted" },
+        }),
+        this.prisma.hrManager.create({
+          data: {
+            email: invite.email,
+            password: hashedPassword,
+            name: invite.name,
+            companyId: invite.companyId,
+          },
+        }),
+      ]);
+      hrManager = createdHr;
     } catch (err) {
       if (this.isUniqueConstraintError(err)) {
         throw new ConflictException("이미 가입이 완료된 이메일입니다.");
@@ -566,6 +574,52 @@ export class AuthService {
       email: hrManager.email,
       companyId: hrManager.companyId,
     };
+  }
+
+  // ===========================
+  // 인사팀장 목록 조회 (활성 계정 + 대기중/만료된 초대 함께)
+  // ===========================
+  async listHrManagers(companyId: string) {
+    const [hrManagers, invites] = await Promise.all([
+      this.prisma.hrManager.findMany({
+        where: { companyId },
+        select: { id: true, name: true, email: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      }),
+      this.prisma.hrInvite.findMany({
+        where: { companyId, status: "pending" },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          expiresAt: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    const now = new Date();
+
+    const activeList = hrManagers.map((hr) => ({
+      id: hr.id,
+      name: hr.name,
+      email: hr.email,
+      status: "active" as const,
+      createdAt: hr.createdAt,
+    }));
+
+    const inviteList = invites.map((invite) => ({
+      id: invite.id,
+      name: invite.name,
+      email: invite.email,
+      status: (invite.expiresAt < now ? "expired" : "pending") as
+        | "expired"
+        | "pending",
+      createdAt: invite.createdAt,
+    }));
+
+    return [...activeList, ...inviteList];
   }
 
   // ===========================
@@ -1034,26 +1088,45 @@ export class AuthService {
   }
 
   // ===========================
-  // 인사팀장 계정 삭제
+  // 인사팀장 계정 삭제 (활성 계정) / 초대 취소 (대기중 초대) — 같은 id 공간을 공유
   // ===========================
   async deleteHrManager(hrUserId: string, companyId: string) {
     const hrManager = await this.prisma.hrManager.findUnique({
       where: { id: hrUserId },
     });
 
-    if (!hrManager) {
-      throw new BadRequestException("존재하지 않는 인사팀장 계정입니다.");
+    if (hrManager) {
+      if (hrManager.companyId !== companyId) {
+        throw new UnauthorizedException("해당 계정을 삭제할 권한이 없습니다.");
+      }
+
+      await this.prisma.hrManager.delete({
+        where: { id: hrUserId },
+      });
+
+      // JwtStrategy가 매 요청마다 계정 존재 여부를 확인하므로, 삭제된 이 계정의
+      // 기존 액세스 토큰은 이 시점 이후 첫 요청부터 바로 거부됨 (만료 전이라도)
+      return { message: "인사팀장 계정이 삭제되었습니다." };
     }
 
-    if (hrManager.companyId !== companyId) {
-      throw new UnauthorizedException("해당 계정을 삭제할 권한이 없습니다.");
-    }
-
-    await this.prisma.hrManager.delete({
+    const invite = await this.prisma.hrInvite.findUnique({
       where: { id: hrUserId },
     });
 
-    return { message: "인사팀장 계정이 삭제되었습니다." };
+    if (invite) {
+      if (invite.companyId !== companyId) {
+        throw new UnauthorizedException("해당 초대를 취소할 권한이 없습니다.");
+      }
+
+      await this.prisma.hrInvite.update({
+        where: { id: hrUserId },
+        data: { status: "revoked" },
+      });
+
+      return { message: "초대가 취소되었습니다." };
+    }
+
+    throw new BadRequestException("존재하지 않는 인사팀장 계정 또는 초대입니다.");
   }
 
   // ===========================

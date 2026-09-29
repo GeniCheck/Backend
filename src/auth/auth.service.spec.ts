@@ -35,9 +35,17 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
       },
       hrManager: {
         findUnique: jest.fn(),
+        findMany: jest.fn(),
         create: jest.fn(),
         delete: jest.fn(),
         update: jest.fn(),
+      },
+      hrInvite: {
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
       },
       otpVerification: {
         create: jest.fn(),
@@ -153,6 +161,8 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
       email: "ceo@company.com",
       companyName: "지니체크",
     });
+    prismaMock.hrInvite.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.hrInvite.create.mockResolvedValue({ id: "invite-1" });
 
     const res = await service.hrInvite(
       { name: "홍길동", email: "hr@company.com" },
@@ -160,9 +170,21 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     );
 
     expect(res).toEqual({ message: "초대 메일이 발송되었습니다." });
+    expect(prismaMock.hrInvite.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "comp-1", email: "hr@company.com", status: "pending" },
+      data: { status: "revoked" },
+    });
+    expect(prismaMock.hrInvite.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        companyId: "comp-1",
+        email: "hr@company.com",
+        name: "홍길동",
+        token: expect.any(String),
+      }),
+    });
     expect(emailMock.sendHrInviteEmail).toHaveBeenCalledWith(
       "hr@company.com",
-      "mock-temp-token",
+      expect.any(String),
       "지니체크",
     );
   });
@@ -180,17 +202,16 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
   });
 
   it("6. hrAcceptInvite (초대 토큰 검증 후 HR 본인이 설정한 비밀번호로 계정 생성) 정상 작동", async () => {
-    jwtMock.verify.mockReturnValue({
-      sub: "comp-1",
-      purpose: "hr_invite",
-      hrEmail: "hr@company.com",
-      hrName: "홍길동",
+    prismaMock.hrInvite.findUnique.mockResolvedValue({
+      id: "invite-1",
+      companyId: "comp-1",
+      email: "hr@company.com",
+      name: "홍길동",
+      status: "pending",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
     prismaMock.hrManager.findUnique.mockResolvedValue(null);
-    prismaMock.company.findUnique.mockResolvedValue({
-      id: "comp-1",
-      email: "ceo@company.com",
-    });
+    prismaMock.hrInvite.update.mockResolvedValue({});
     prismaMock.hrManager.create.mockResolvedValue({
       id: "hr-1",
       name: "홍길동",
@@ -209,6 +230,10 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
       email: "hr@company.com",
       companyId: "comp-1",
     });
+    expect(prismaMock.hrInvite.update).toHaveBeenCalledWith({
+      where: { id: "invite-1" },
+      data: { status: "accepted" },
+    });
     expect(prismaMock.hrManager.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         email: "hr@company.com",
@@ -219,11 +244,13 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
   });
 
   it("6-1. hrAcceptInvite (이미 가입 완료된 이메일이면 실패)", async () => {
-    jwtMock.verify.mockReturnValue({
-      sub: "comp-1",
-      purpose: "hr_invite",
-      hrEmail: "hr@company.com",
-      hrName: "홍길동",
+    prismaMock.hrInvite.findUnique.mockResolvedValue({
+      id: "invite-1",
+      companyId: "comp-1",
+      email: "hr@company.com",
+      name: "홍길동",
+      status: "pending",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
     prismaMock.hrManager.findUnique.mockResolvedValue({ id: "hr-existing" });
 
@@ -233,23 +260,129 @@ describe("AuthService (전하은 담당 14개 API 검증)", () => {
     expect(prismaMock.hrManager.create).not.toHaveBeenCalled();
   });
 
+  it("6-2. hrAcceptInvite (존재하지 않는 토큰이면 실패)", async () => {
+    prismaMock.hrInvite.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.hrAcceptInvite({ token: "bad-token", password: "Pass1!" }),
+    ).rejects.toThrow("초대 링크가 유효하지 않습니다.");
+  });
+
+  it("6-3. hrAcceptInvite (만료된 초대면 실패하고 상태를 revoked로 갱신)", async () => {
+    prismaMock.hrInvite.findUnique.mockResolvedValue({
+      id: "invite-1",
+      companyId: "comp-1",
+      email: "hr@company.com",
+      name: "홍길동",
+      status: "pending",
+      expiresAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+    prismaMock.hrInvite.update.mockResolvedValue({});
+
+    await expect(
+      service.hrAcceptInvite({ token: "invite-token", password: "Pass1!" }),
+    ).rejects.toThrow("초대 링크가 만료되었습니다");
+    expect(prismaMock.hrInvite.update).toHaveBeenCalledWith({
+      where: { id: "invite-1" },
+      data: { status: "revoked" },
+    });
+  });
+
+  it("6-4. hrAcceptInvite (이미 처리/취소된 초대면 실패)", async () => {
+    prismaMock.hrInvite.findUnique.mockResolvedValue({
+      id: "invite-1",
+      companyId: "comp-1",
+      email: "hr@company.com",
+      name: "홍길동",
+      status: "revoked",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+
+    await expect(
+      service.hrAcceptInvite({ token: "invite-token", password: "Pass1!" }),
+    ).rejects.toThrow("이미 처리되었거나 취소된 초대입니다.");
+  });
+
   it("hrAcceptInvite: 동시 요청 경합으로 create가 unique 위반이면 409로 처리", async () => {
-    jwtMock.verify.mockReturnValue({
-      sub: "comp-1",
-      purpose: "hr_invite",
-      hrEmail: "hr@company.com",
-      hrName: "홍길동",
+    prismaMock.hrInvite.findUnique.mockResolvedValue({
+      id: "invite-1",
+      companyId: "comp-1",
+      email: "hr@company.com",
+      name: "홍길동",
+      status: "pending",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
     prismaMock.hrManager.findUnique.mockResolvedValue(null);
-    prismaMock.company.findUnique.mockResolvedValue({
-      id: "comp-1",
-      email: "ceo@company.com",
-    });
+    prismaMock.hrInvite.update.mockResolvedValue({});
     prismaMock.hrManager.create.mockRejectedValue(uniqueConstraintError());
 
     await expect(
       service.hrAcceptInvite({ token: "invite-token", password: "Pass1!" }),
     ).rejects.toThrow("이미 가입이 완료된 이메일입니다.");
+  });
+
+  it("listHrManagers: 활성 계정 + 대기중/만료된 초대를 함께 반환", async () => {
+    prismaMock.hrManager.findMany.mockResolvedValue([
+      { id: "hr-1", name: "김대리", email: "kim@company.com", createdAt: new Date("2026-01-01") },
+    ]);
+    prismaMock.hrInvite.findMany.mockResolvedValue([
+      {
+        id: "invite-1",
+        name: "박초대",
+        email: "park@company.com",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        createdAt: new Date("2026-02-01"),
+      },
+      {
+        id: "invite-2",
+        name: "이만료",
+        email: "lee@company.com",
+        expiresAt: new Date(Date.now() - 60 * 60 * 1000),
+        createdAt: new Date("2026-01-15"),
+      },
+    ]);
+
+    const res = await service.listHrManagers("comp-1");
+
+    expect(res).toEqual([
+      expect.objectContaining({ id: "hr-1", status: "active" }),
+      expect.objectContaining({ id: "invite-1", status: "pending" }),
+      expect.objectContaining({ id: "invite-2", status: "expired" }),
+    ]);
+    expect(prismaMock.hrInvite.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { companyId: "comp-1", status: "pending" },
+      }),
+    );
+  });
+
+  it("deleteHrManager: 대기중 초대 id를 넘기면 초대를 취소함", async () => {
+    prismaMock.hrManager.findUnique.mockResolvedValue(null);
+    prismaMock.hrInvite.findUnique.mockResolvedValue({
+      id: "invite-1",
+      companyId: "comp-1",
+    });
+    prismaMock.hrInvite.update.mockResolvedValue({});
+
+    const res = await service.deleteHrManager("invite-1", "comp-1");
+
+    expect(res).toEqual({ message: "초대가 취소되었습니다." });
+    expect(prismaMock.hrInvite.update).toHaveBeenCalledWith({
+      where: { id: "invite-1" },
+      data: { status: "revoked" },
+    });
+  });
+
+  it("deleteHrManager: 다른 회사의 초대는 취소할 수 없음", async () => {
+    prismaMock.hrManager.findUnique.mockResolvedValue(null);
+    prismaMock.hrInvite.findUnique.mockResolvedValue({
+      id: "invite-1",
+      companyId: "comp-other",
+    });
+
+    await expect(
+      service.deleteHrManager("invite-1", "comp-1"),
+    ).rejects.toThrow("해당 초대를 취소할 권한이 없습니다.");
   });
 
   it("7. hrLogin (회사 대표 이메일로 로그인 OTP 발송) 정상 작동", async () => {

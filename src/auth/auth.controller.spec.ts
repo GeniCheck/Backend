@@ -20,6 +20,7 @@ describe('AuthController', () => {
       verifyCompanySignupOtp: jest.fn(),
       hrInvite: jest.fn(),
       hrAcceptInvite: jest.fn(),
+      listHrManagers: jest.fn(),
       hrLogin: jest.fn(),
       hrOtpVerify: jest.fn(),
       resendOtp: jest.fn(),
@@ -83,5 +84,19 @@ describe('AuthController', () => {
       '대표만 인사팀장을 삭제할 수 있습니다.',
     );
     expect(authServiceMock.deleteHrManager).not.toHaveBeenCalled();
+  });
+
+  it('allows a COMPANY caller to list HR managers', async () => {
+    const req = { user: { sub: 'company-1', role: 'COMPANY' } } as any;
+    await controller.listHrManagers(req);
+    expect(authServiceMock.listHrManagers).toHaveBeenCalledWith('company-1');
+  });
+
+  it('rejects HR manager listing from a non-COMPANY caller', async () => {
+    const req = { user: { sub: 'hr-2', role: 'HR_MANAGER' } } as any;
+    await expect(controller.listHrManagers(req)).rejects.toThrow(
+      '대표만 인사팀장 목록을 조회할 수 있습니다.',
+    );
+    expect(authServiceMock.listHrManagers).not.toHaveBeenCalled();
   });
 });

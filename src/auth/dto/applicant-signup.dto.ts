@@ -20,11 +20,11 @@ export class ApplicantSignupDto {
 
   @ApiProperty({
     example: 'Pass1!',
-    description: '비밀번호 (6~10자, 영문 대소문자·숫자·특수문자(!@#$%^&*) 각 1개 이상)',
+    description: '비밀번호 (6~20자, 영문 대소문자·숫자·특수문자(!@#$%^&*) 각 1개 이상)',
   })
   @IsString()
   @MinLength(6, { message: '비밀번호는 최소 6자 이상이어야 합니다.' })
-  @MaxLength(10, { message: '비밀번호는 최대 10자까지 입력할 수 있습니다.' })
+  @MaxLength(20, { message: '비밀번호는 최대 20자까지 입력할 수 있습니다.' })
   @Matches(/^[a-zA-Z0-9!@#$%^&*]+$/, {
     message: '비밀번호는 영문, 숫자, 특수문자(!@#$%^&*)만 사용할 수 있습니다.',
   })

@@ -307,17 +307,40 @@ export class AuthController {
   }
 
   // ===========================
-  // 인사팀장 계정 삭제
+  // 인사팀장 목록 조회 (활성 계정 + 대기중/만료된 초대 포함)
+  // ===========================
+  @Get("hr")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "인사팀장 목록 조회 - 활성 계정 + 아직 수락 안 한 초대까지 함께 반환 (COMPANY 권한 필요)",
+  })
+  @ApiResponse({ status: 200, description: "목록 조회 성공" })
+  @ApiResponse({ status: 403, description: "대표만 조회할 수 있음" })
+  @ResponseMessage("인사팀장 목록을 조회했습니다.")
+  async listHrManagers(@Req() req: Request) {
+    const user = req.user as JwtPayload;
+    if (user.role !== "COMPANY") {
+      throw new ForbiddenException("대표만 인사팀장 목록을 조회할 수 있습니다.");
+    }
+    return this.authService.listHrManagers(user.sub);
+  }
+
+  // ===========================
+  // 인사팀장 계정 삭제 / 초대 취소
   // ===========================
   @Delete("hr/:hrUserId")
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "인사팀장 계정 삭제 (COMPANY 권한 필요)" })
-  @ApiResponse({ status: 200, description: "인사팀장 계정 삭제 성공" })
+  @ApiOperation({
+    summary: "인사팀장 계정 삭제 또는 대기중 초대 취소 - hrUserId가 어느 쪽인지에 따라 자동 처리 (COMPANY 권한 필요)",
+  })
+  @ApiResponse({ status: 200, description: "삭제/취소 성공" })
   @ApiResponse({ status: 401, description: "권한 없음" })
-  @ApiResponse({ status: 403, description: "대표만 인사팀장을 삭제할 수 있음" })
-  @ResponseMessage("인사팀장 계정이 삭제되었습니다.")
+  @ApiResponse({ status: 403, description: "대표만 삭제/취소할 수 있음" })
+  @ResponseMessage("처리되었습니다.")
   async deleteHrManager(
     @Param("hrUserId") hrUserId: string,
     @Req() req: Request,

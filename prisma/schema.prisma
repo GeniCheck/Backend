@@ -48,13 +48,14 @@ model Company {
   updatedAt          DateTime @updatedAt
 
   hrManagers  HrManager[]
+  hrInvites   HrInvite[]
   consents    Consent[]
   employments Employment[]
 
   @@map("companies")
 }
 
-// HR 담당자 (기업 소속)
+// HR 담당자 (기업 소속, 초대를 수락해 실제 로그인 계정이 생긴 상태)
 model HrManager {
   id           String   @id @default(uuid())
   email        String?  @unique
@@ -67,6 +68,22 @@ model HrManager {
   updatedAt    DateTime @updatedAt
 
   @@map("hr_managers")
+}
+
+// HR 초대 (대표가 보낸 초대장 — 수락하면 HrManager가 생성됨)
+// 목록 조회/취소를 위해 DB에 상태를 남겨둠 (이전엔 JWT뿐이라 추적 불가능했음)
+model HrInvite {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email     String
+  name      String
+  token     String   @unique
+  status    String   @default("pending") // pending | accepted | revoked
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("hr_invites")
 }
 
 // 이메일 인증

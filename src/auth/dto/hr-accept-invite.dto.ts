@@ -7,11 +7,11 @@ export class HrAcceptInviteDto {
   @IsNotEmpty()
   token!: string;
 
-  @ApiProperty({ example: 'Pass1!', description: 'HR 본인이 설정할 로그인 비밀번호' })
+  @ApiProperty({ example: 'Pass1!', description: 'HR 본인이 설정할 로그인 비밀번호 (6~20자)' })
   @IsString()
   @IsNotEmpty()
   @MinLength(6)
-  @MaxLength(30)
+  @MaxLength(20)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).+$/)
   password!: string;
 }

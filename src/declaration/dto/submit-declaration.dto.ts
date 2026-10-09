@@ -2,13 +2,13 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
-  IsBoolean,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   ValidateNested,
 } from 'class-validator';
+import { StrictBoolean } from '../../core/decorators/strict-boolean.decorator';
 
 /**
  * 질문 유형에 맞는 필드 하나만 보낸다. SCORE → answerScore, SINGLE_CHOICE → answerOptionId, TEXT → answerText
@@ -36,17 +36,18 @@ export class AnswerDto {
   answerText?: string;
 }
 
+// 동의 여부는 진짜 boolean만 허용 ("false" 문자열이 동의로 바뀌지 않도록)
 export class DeclarationConsentsDto {
   @ApiProperty({ example: true, description: '평가 활용 동의' })
-  @IsBoolean()
+  @StrictBoolean()
   evaluationAgreed!: boolean;
 
   @ApiProperty({ example: true, description: '정보 열람 동의' })
-  @IsBoolean()
+  @StrictBoolean()
   dataAccessAgreed!: boolean;
 
   @ApiProperty({ example: true, description: '증빙 보관 동의' })
-  @IsBoolean()
+  @StrictBoolean()
   evidenceRetentionAgreed!: boolean;
 
   @ApiProperty({ example: '2026-10-01', description: '질문지 조회 응답의 consentVersion' })

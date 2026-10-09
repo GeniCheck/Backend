@@ -6,6 +6,9 @@ import { NotificationModule } from '../notification/notification.module';
 import { CeoEvaluationController } from './ceo-evaluation.controller';
 import { CeoEvaluationService } from './ceo-evaluation.service';
 import { EvaluationExpiryScheduler } from './evaluation-expiry.scheduler';
+import { EvaluationResultController } from './evaluation-result.controller';
+import { EvaluationResultService } from './evaluation-result.service';
+import { ResultLinkController } from './result-link.controller';
 import { SelfEvaluationController } from './self-evaluation.controller';
 import { SelfEvaluationService } from './self-evaluation.service';
 
@@ -13,8 +16,14 @@ import { SelfEvaluationService } from './self-evaluation.service';
 @Module({
   // AuthModule: 대표 API의 JwtAuthGuard가 RedisService(토큰 블랙리스트)를 사용
   imports: [AuthModule, AccessLinkModule, NotificationModule, AuditModule],
-  // 직원용 라우트(evaluations/self/:token)를 대표용(evaluations/:evaluationId/ceo)보다 먼저 등록
-  controllers: [SelfEvaluationController, CeoEvaluationController],
-  providers: [SelfEvaluationService, CeoEvaluationService, EvaluationExpiryScheduler],
+  // 직원용 토큰 라우트(evaluations/self/:token, evaluations/result/:token)를
+  // 대표용 라우트(evaluations/:evaluationId/ceo, evaluations/:evaluationId/result)보다 먼저 등록
+  controllers: [
+    SelfEvaluationController,
+    ResultLinkController,
+    CeoEvaluationController,
+    EvaluationResultController,
+  ],
+  providers: [SelfEvaluationService, CeoEvaluationService, EvaluationResultService, EvaluationExpiryScheduler],
 })
 export class EvaluationsModule {}

@@ -108,6 +108,17 @@ export class AccessLinkService {
 
     return count;
   }
+
+  /**
+   * 사용·폐기되지 않은 링크의 만료 시각을 늦춘다(앞당기지는 않는다).
+   * 예: 추천 동의 후 같은 링크로 나중에 철회할 수 있도록 유효 기간 연장.
+   */
+  async extend(linkId: string, expiresAt: Date, tx: Tx): Promise<void> {
+    await tx.accessLink.updateMany({
+      where: { id: linkId, usedAt: null, revokedAt: null, expiresAt: { lt: expiresAt } },
+      data: { expiresAt },
+    });
+  }
 }
 
 function linkExpired(): GoneException {

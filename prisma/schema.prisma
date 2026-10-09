@@ -51,6 +51,7 @@ model Company {
   hrInvites   HrInvite[]
   consents    Consent[]
   employments Employment[]
+  employees   Employee[]
 
   @@map("companies")
 }
@@ -243,4 +244,384 @@ model CeoEvaluationScore {
   employment Employment        @relation(fields: [employmentId], references: [id], onDelete: Cascade)
 
   @@map("ceo_evaluation_scores")
+}
+
+// =========================
+// Employee 기반 평가·인재추천 MVP (신규 흐름)
+// - 레거시(Employment/EvaluationLink/DeclarationQuestion 등)와 분리된 모델
+// - Company와 직접 relation을 맺는 신규 모델은 Employee 하나뿐이다.
+//   직원 소속 데이터는 (employeeId, companyId) 복합 FK로 Employee를 참조해
+//   companyId가 항상 해당 직원의 기업과 일치하도록 DB에서 보장한다.
+// - 평가·추천 이력 보존을 위해 Company/Employee 쪽 삭제는 Restrict
+// =========================
+
+enum EmploymentStatus {
+  EMPLOYED
+  RESIGNED
+}
+
+enum DeclarationStatus {
+  NOT_SENT
+  SENT
+  SUBMITTED
+}
+
+enum TemplateStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum QuestionType {
+  SCORE
+  SINGLE_CHOICE
+  TEXT
+}
+
+// CEO_EXPIRED: 명세에는 없지만 퇴사일 + 15일 내 대표 미검증 상태 표시용
+enum EvaluationStatus {
+  SELF_PENDING
+  CEO_PENDING
+  SELF_EXPIRED
+  COMPLETED
+  CEO_EXPIRED
+}
+
+enum CompetencyKey {
+  TRUST
+  DILIGENCE
+  RESPONSIBILITY
+  COLLABORATION
+  COMMUNICATION
+  GROWTH_POTENTIAL
+}
+
+enum LinkPurpose {
+  DECLARATION
+  SELF_EVALUATION
+  EVALUATION_RESULT
+  REFERRAL_CONSENT
+}
+
+enum ReferralConsentStatus {
+  PENDING
+  AGREED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum ReferralPostStatus {
+  PUBLISHED
+  HIDDEN
+  EXPIRED
+  DELETED
+}
+
+enum DisplayNameMode {
+  REAL_NAME
+  ANONYMOUS
+}
+
+enum AuditActorType {
+  COMPANY
+  HR_MANAGER
+  EMPLOYEE
+  SYSTEM
+}
+
+// 직원 (계정 없음, 1회성 링크로만 접근)
+// email은 서비스에서 trim + 소문자로 정규화해 저장한다 (auth와 동일 규칙)
+model Employee {
+  id                  String            @id @default(uuid())
+  companyId           String
+  company             Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  name                String
+  email               String
+  phone               String?
+  department          String?
+  position            String?
+  employmentStartDate DateTime
+  employmentStatus    EmploymentStatus  @default(EMPLOYED)
+  declarationStatus   DeclarationStatus @default(NOT_SENT)
+  resignationDate     DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  declarations     Declaration[]
+  evaluations      Evaluation[]
+  referralConsents ReferralConsent[]
+  resumeFiles      ResumeFile[]
+  referralPosts    ReferralPost[]
+
+  @@unique([companyId, email])
+  @@unique([id, companyId]) // 복합 FK 참조 대상
+  @@map("employees")
+}
+
+// 대표가 만드는 재사용 질문 템플릿
+model QuestionTemplate {
+  id          String         @id @default(uuid())
+  companyId   String
+  name        String
+  description String?
+  version     Int            @default(1)
+  status      TemplateStatus @default(ACTIVE)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  questions TemplateQuestion[]
+
+  @@index([companyId])
+  @@map("question_templates")
+}
+
+model TemplateQuestion {
+  id                String       @id @default(uuid())
+  templateId        String
+  order             Int
+  type              QuestionType
+  text              String
+  required          Boolean      @default(true)
+  scoreMin          Int?
+  scoreMax          Int?
+  options           Json? // SINGLE_CHOICE 선택지
+  maxLength         Int?
+  evaluationEnabled Boolean      @default(false)
+
+  template QuestionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, order])
+  @@map("template_questions")
+}
+
+// 직원에게 할당된 자기선언 질문지 (발송 시점 템플릿을 스냅샷으로 보관)
+model Declaration {
+  id                       String            @id @default(uuid())
+  companyId                String
+  employeeId               String
+  templateId               String // 스냅샷 독립을 위해 FK 없이 보관
+  templateName             String
+  templateVersion          Int
+  status                   DeclarationStatus @default(SENT)
+  sentAt                   DateTime
+  submittedAt              DateTime?
+  consentEvaluation        Boolean           @default(false)
+  consentDataAccess        Boolean           @default(false)
+  consentEvidenceRetention Boolean           @default(false)
+  consentVersion           String?
+  consentAgreedAt          DateTime?
+  consentIp                String?
+  consentUserAgent         String?
+
+  employee   Employee                      @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict)
+  questions  DeclarationQuestionSnapshot[]
+  evaluation Evaluation?
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@map("declarations")
+}
+
+model DeclarationQuestionSnapshot {
+  id                String       @id @default(uuid())
+  declarationId     String
+  order             Int
+  type              QuestionType
+  text              String
+  required          Boolean
+  scoreMin          Int?
+  scoreMax          Int?
+  options           Json? // [{ optionId, label }]
+  maxLength         Int?
+  evaluationEnabled Boolean
+
+  declaration     Declaration          @relation(fields: [declarationId], references: [id], onDelete: Cascade)
+  response        DeclarationResponse?
+  evaluationItems EvaluationItem[]
+
+  @@unique([declarationId, order])
+  @@map("declaration_question_snapshots")
+}
+
+model DeclarationResponse {
+  id                 String  @id @default(uuid())
+  snapshotQuestionId String  @unique
+  answerScore        Int?
+  answerOptionId     String?
+  answerText         String?
+
+  snapshotQuestion DeclarationQuestionSnapshot @relation(fields: [snapshotQuestionId], references: [id], onDelete: Cascade)
+
+  @@map("declaration_responses")
+}
+
+// 퇴사 평가 (자기평가 + 대표 검증, 서술형 필드 없음)
+model Evaluation {
+  id                  String           @id @default(uuid())
+  companyId           String
+  employeeId          String
+  declarationId       String           @unique
+  status              EvaluationStatus @default(SELF_PENDING)
+  resignationDate     DateTime
+  selfEvaluationDueAt DateTime // 퇴사일 + 3일 KST 23:59:59
+  ceoEvaluationDueAt  DateTime // 퇴사일 + 15일 KST 23:59:59
+  selfSubmittedAt     DateTime?
+  rehireIntent        Boolean?
+  completedAt         DateTime?
+  opinionDueAt        DateTime? // 대표 검증 완료 + 7일 KST 23:59:59
+  resultViewedAt      DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  employee         Employee           @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict)
+  declaration      Declaration        @relation(fields: [declarationId], references: [id], onDelete: Restrict)
+  items            EvaluationItem[]
+  competencyScores CompetencyScore[]
+  opinion          EvaluationOpinion?
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status, selfEvaluationDueAt])
+  @@index([status, ceoEvaluationDueAt])
+  @@map("evaluations")
+}
+
+model EvaluationItem {
+  id                 String @id @default(uuid())
+  evaluationId       String
+  snapshotQuestionId String
+  order              Int
+  selfScore          Int? // 1~10
+  ceoScore           Int? // 1~10
+
+  evaluation       Evaluation                  @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  snapshotQuestion DeclarationQuestionSnapshot @relation(fields: [snapshotQuestionId], references: [id], onDelete: Restrict)
+
+  @@unique([evaluationId, snapshotQuestionId])
+  @@map("evaluation_items")
+}
+
+// 대표가 입력하는 공통 역량 6개 점수
+model CompetencyScore {
+  id           String        @id @default(uuid())
+  evaluationId String
+  key          CompetencyKey
+  score        Int // 1~10
+
+  evaluation Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+
+  @@unique([evaluationId, key])
+  @@map("competency_scores")
+}
+
+// 평가 결과에 대한 직원 의견 (신규 흐름에서 유일한 서술형 텍스트)
+model EvaluationOpinion {
+  id           String   @id @default(uuid())
+  evaluationId String   @unique
+  content      String
+  submittedAt  DateTime
+
+  evaluation Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+
+  @@map("evaluation_opinions")
+}
+
+// 1회성 링크 (원문 토큰은 저장하지 않고 sha256 해시만 저장)
+model AccessLink {
+  id        String      @id @default(uuid())
+  purpose   LinkPurpose
+  tokenHash String      @unique
+  targetId  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime    @default(now())
+
+  @@index([purpose, targetId])
+  @@index([expiresAt])
+  @@map("access_links")
+}
+
+// 인재 추천 게시 동의
+model ReferralConsent {
+  id              String                @id @default(uuid())
+  companyId       String
+  employeeId      String
+  status          ReferralConsentStatus @default(PENDING)
+  displayNameMode DisplayNameMode
+  sentAt          DateTime
+  expiresAt       DateTime
+  agreedAt        DateTime?
+  withdrawnAt     DateTime?
+  agreedIp        String?
+  agreedUserAgent String?
+
+  employee Employee       @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict)
+  posts    ReferralPost[]
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@map("referral_consents")
+}
+
+// 추천 이력서 파일 메타데이터 (파일 원문은 객체 스토리지)
+model ResumeFile {
+  id          String    @id @default(uuid())
+  companyId   String
+  employeeId  String
+  objectKey   String    @unique
+  fileName    String
+  contentType String
+  fileSize    Int
+  uploadedAt  DateTime? // 업로드 확인 시각
+  createdAt   DateTime  @default(now())
+
+  employee Employee       @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict)
+  posts    ReferralPost[]
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@map("resume_files")
+}
+
+// 인재 추천 게시물
+model ReferralPost {
+  id                   String             @id @default(uuid())
+  companyId            String
+  employeeId           String
+  referralConsentId    String
+  resumeFileId         String?
+  title                String
+  recommendationReason String
+  displayNameMode      DisplayNameMode
+  status               ReferralPostStatus @default(PUBLISHED)
+  publishedAt          DateTime
+  expiresAt            DateTime
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  employee        Employee        @relation(fields: [employeeId, companyId], references: [id, companyId], onDelete: Restrict)
+  referralConsent ReferralConsent @relation(fields: [referralConsentId], references: [id], onDelete: Restrict)
+  resumeFile      ResumeFile?     @relation(fields: [resumeFileId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status, expiresAt])
+  @@map("referral_posts")
+}
+
+// 감사 로그 (대상 삭제와 무관하게 보존되도록 FK 없이 스칼라로 보관)
+model AuditLog {
+  id         String         @id @default(uuid())
+  actorType  AuditActorType
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String?
+  ip         String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime       @default(now())
+
+  @@index([targetType, targetId])
+  @@map("audit_logs")
 }

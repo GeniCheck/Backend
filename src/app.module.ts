@@ -10,6 +10,7 @@ import { AccessLinkModule } from './access-link/access-link.module';
 import { NotificationModule } from './notification/notification.module';
 import { AuditModule } from './audit/audit.module';
 import { QuestionTemplateModule } from './question-template/question-template.module';
+import { EmployeeModule } from './employee/employee.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { QuestionTemplateModule } from './question-template/question-template.mo
     NotificationModule,
     AuditModule,
     QuestionTemplateModule,
+    EmployeeModule,
   ],
 })
 export class AppModule {}

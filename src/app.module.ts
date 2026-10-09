@@ -13,6 +13,7 @@ import { QuestionTemplateModule } from './question-template/question-template.mo
 import { EmployeeModule } from './employee/employee.module';
 import { DeclarationModule } from './declaration/declaration.module';
 import { EvaluationsModule } from './evaluations/evaluations.module';
+import { ReferralModule } from './referral/referral.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { EvaluationsModule } from './evaluations/evaluations.module';
     EmployeeModule,
     DeclarationModule,
     EvaluationsModule,
+    ReferralModule,
   ],
 })
 export class AppModule {}

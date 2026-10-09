@@ -11,7 +11,11 @@ import { PrismaService } from '../prisma/prisma.service';
 function createFakeDb() {
   const links: any[] = [];
   const matches = (link: any, where: Record<string, unknown>) =>
-    Object.entries(where).every(([key, value]) => link[key] === value);
+    Object.entries(where).every(([key, value]) =>
+      value && typeof value === 'object' && 'lt' in value
+        ? link[key] < (value as { lt: Date }).lt
+        : link[key] === value,
+    );
 
   const accessLink = {
     create: jest.fn(async ({ data }: any) => {
@@ -160,5 +164,24 @@ describe('AccessLinkService', () => {
       where: { tokenHash: hashToken(token) },
     });
     expect(db.client.accessLink.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('extend는 미사용·미폐기 링크의 만료만 늦추고, 앞당기지는 않는다', async () => {
+    const base = future();
+    const later = new Date(base.getTime() + 24 * 60 * 60 * 1000);
+    const earlier = new Date(base.getTime() - 60 * 1000);
+    await service.issue('REFERRAL_CONSENT', 'c-1', base, tx);
+    await service.issue('REFERRAL_CONSENT', 'c-2', base, tx);
+    await service.issue('REFERRAL_CONSENT', 'c-3', base, tx);
+    db.links[1].usedAt = new Date();
+    db.links[2].revokedAt = new Date();
+
+    await service.extend('link-1', later, tx);
+    await service.extend('link-2', later, tx);
+    await service.extend('link-3', later, tx);
+    expect(db.links.map((l) => l.expiresAt)).toEqual([later, base, base]);
+
+    await service.extend('link-1', earlier, tx);
+    expect(db.links[0].expiresAt).toEqual(later);
   });
 });

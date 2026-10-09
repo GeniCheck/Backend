@@ -2,13 +2,13 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { QuestionType } from '@prisma/client';
 import {
   IsArray,
-  IsBoolean,
   IsEnum,
   IsInt,
   IsString,
   Min,
   ValidateIf,
 } from 'class-validator';
+import { StrictBoolean } from '../../core/decorators/strict-boolean.decorator';
 
 /**
  * 템플릿 질문 1개. 여기서는 형식(타입)만 검사하고(400),
@@ -30,7 +30,7 @@ export class QuestionDto {
   text!: string;
 
   @ApiProperty({ example: true })
-  @IsBoolean()
+  @StrictBoolean()
   required!: boolean;
 
   @ApiPropertyOptional({ example: 1, description: 'SCORE 필수. 1 이상' })
@@ -59,6 +59,6 @@ export class QuestionDto {
   maxLength?: number;
 
   @ApiProperty({ example: true, description: '퇴사 평가 항목으로 사용할지 여부' })
-  @IsBoolean()
+  @StrictBoolean()
   evaluationEnabled!: boolean;
 }

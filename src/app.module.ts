@@ -9,6 +9,7 @@ import { EvaluationModule } from './evaluation/evaluation.module';
 import { AccessLinkModule } from './access-link/access-link.module';
 import { NotificationModule } from './notification/notification.module';
 import { AuditModule } from './audit/audit.module';
+import { QuestionTemplateModule } from './question-template/question-template.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AuditModule } from './audit/audit.module';
     AccessLinkModule,
     NotificationModule,
     AuditModule,
+    QuestionTemplateModule,
   ],
 })
 export class AppModule {}

@@ -12,6 +12,7 @@ import { AuditModule } from './audit/audit.module';
 import { QuestionTemplateModule } from './question-template/question-template.module';
 import { EmployeeModule } from './employee/employee.module';
 import { DeclarationModule } from './declaration/declaration.module';
+import { EvaluationsModule } from './evaluations/evaluations.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { DeclarationModule } from './declaration/declaration.module';
     QuestionTemplateModule,
     EmployeeModule,
     DeclarationModule,
+    EvaluationsModule,
   ],
 })
 export class AppModule {}

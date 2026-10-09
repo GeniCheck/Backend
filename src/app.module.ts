@@ -6,6 +6,9 @@ import { ConsentModule } from './consent/consent.module';
 import { LinkModule } from './link/link.module';
 import { EmploymentModule } from './employment/employment.module';
 import { EvaluationModule } from './evaluation/evaluation.module';
+import { AccessLinkModule } from './access-link/access-link.module';
+import { NotificationModule } from './notification/notification.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -19,6 +22,9 @@ import { EvaluationModule } from './evaluation/evaluation.module';
     LinkModule,
     EmploymentModule,
     EvaluationModule,
+    AccessLinkModule,
+    NotificationModule,
+    AuditModule,
   ],
 })
 export class AppModule {}

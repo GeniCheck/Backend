@@ -170,8 +170,8 @@ function assertAllItemsOnce(expectedIds: string[], receivedIds: string[]): void 
   }
 }
 
-/** 자기선언 때 직원이 한 답변. 미응답이면 값은 null */
-function toDeclarationAnswer(
+/** 자기선언 때 직원이 한 답변. 미응답이면 값은 null (자기평가·대표 검증 폼 공용) */
+export function toDeclarationAnswer(
   snapshot: DeclarationQuestionSnapshot & { response: DeclarationResponse | null },
 ) {
   const response = snapshot.response;

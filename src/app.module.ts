@@ -11,6 +11,7 @@ import { NotificationModule } from './notification/notification.module';
 import { AuditModule } from './audit/audit.module';
 import { QuestionTemplateModule } from './question-template/question-template.module';
 import { EmployeeModule } from './employee/employee.module';
+import { DeclarationModule } from './declaration/declaration.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { EmployeeModule } from './employee/employee.module';
     AuditModule,
     QuestionTemplateModule,
     EmployeeModule,
+    DeclarationModule,
   ],
 })
 export class AppModule {}

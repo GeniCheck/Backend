@@ -347,6 +347,34 @@ describe('CeoEvaluationService (법적 안전 로직)', () => {
     });
   });
 
+  describe('결과 메일 발송 여부 기록 (대표 결과 화면 notification.sent)', () => {
+    it('발송 결과를 커밋 후 감사 로그 EVALUATION_RESULT_NOTIFIED로 남긴다 (성공·실패 모두)', async () => {
+      await service.submit(CEO, 'ev-1', validDto(), META);
+      expect(auditMock.log).toHaveBeenCalledWith({
+        actorType: 'SYSTEM',
+        action: 'EVALUATION_RESULT_NOTIFIED',
+        targetType: 'Evaluation',
+        targetId: 'ev-1',
+        metadata: { sent: true },
+      });
+
+      state.status = 'CEO_PENDING';
+      mailMock.sendEvaluationResult.mockResolvedValue(false);
+      await service.submit(CEO, 'ev-1', validDto(), META);
+      expect(auditMock.log).toHaveBeenLastCalledWith(expect.objectContaining({ metadata: { sent: false } }));
+    });
+
+    it('발송 기록이 실패해도 제출 응답은 성공한다 (이미 커밋됨)', async () => {
+      auditMock.log.mockImplementation(async (params: any) => {
+        if (params.action === 'EVALUATION_RESULT_NOTIFIED') throw new Error('DB down');
+      });
+      const errorSpy = jest.spyOn((service as any).logger, 'error').mockImplementation(() => undefined);
+
+      await expect(service.submit(CEO, 'ev-1', validDto(), META)).resolves.toMatchObject({ status: 'COMPLETED' });
+      expect(errorSpy).toHaveBeenCalled();
+    });
+  });
+
   // 16
   describe('검사 우선순위 (프롬프트 순서)', () => {
     it('재직 중 + COMPLETED → 403 STILL_EMPLOYED가 먼저', async () => {

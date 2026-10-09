@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   GoneException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import {
   COMMON_COMPETENCIES,
   OPINION_DUE_DAYS,
   RESULT_LINK_EXTRA_DAYS,
+  RESULT_NOTIFIED_ACTION,
 } from './competency.constants';
 import { SubmitCeoEvaluationDto } from './dto/submit-ceo-evaluation.dto';
 import { SCORE_MAX, SCORE_MIN, isValidScore } from './evaluation.constants';
@@ -43,6 +45,8 @@ type EvaluationWithEmployee = Evaluation & {
  */
 @Injectable()
 export class CeoEvaluationService {
+  private readonly logger = new Logger(CeoEvaluationService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessLinkService: AccessLinkService,
@@ -203,6 +207,7 @@ export class CeoEvaluationService {
       companyName: company?.companyName,
       expiresAt: linkExpiresAt,
     });
+    await this.recordResultNotification(evaluationId, resultNotified);
 
     return {
       evaluationId,
@@ -211,6 +216,24 @@ export class CeoEvaluationService {
       resultNotified,
       opinionDueAt,
     };
+  }
+
+  /**
+   * 결과 메일 발송 여부를 감사 로그로 남긴다 (대표 결과 화면의 notification.sent에 사용).
+   * 이미 커밋된 뒤라 기록 실패가 제출 응답을 실패로 만들지 않도록 예외를 삼킨다.
+   */
+  private async recordResultNotification(evaluationId: string, sent: boolean): Promise<void> {
+    try {
+      await this.auditService.log({
+        actorType: 'SYSTEM',
+        action: RESULT_NOTIFIED_ACTION,
+        targetType: 'Evaluation',
+        targetId: evaluationId,
+        metadata: { sent },
+      });
+    } catch (error) {
+      this.logger.error(`결과 통보 기록 실패: ${evaluationId}`, error instanceof Error ? error.stack : String(error));
+    }
   }
 
   private async findEvaluation(client: Client, evaluationId: string): Promise<EvaluationWithEmployee | null> {

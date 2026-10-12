@@ -1,0 +1,48 @@
+name: Mock Referral Posts (one-off)
+
+# 인재 추천 게시물 목데이터 10건 넣기/지우기 (프론트 목록 API 연동 확인용)
+# 수동으로 "Run workflow"를 눌러야만 실행됨 (push로는 절대 실행 안 됨)
+# 사용 후에는 cleanup 실행 → 이 파일과 scripts/mock 삭제
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'seed = 목데이터 넣기, cleanup = 목데이터만 지우기'
+        required: true
+        type: choice
+        options:
+          - seed
+          - cleanup
+      confirm:
+        description: '실행하려면 MOCK 이라고 입력'
+        required: true
+        type: string
+
+jobs:
+  mock:
+    name: ${{ inputs.action }} mock referral posts
+    runs-on: ubuntu-latest
+    # dev 브랜치에서, 확인 문구를 정확히 입력했을 때만 실행
+    if: github.ref == 'refs/heads/dev' && inputs.confirm == 'MOCK'
+    steps:
+      - name: Run SQL on OCI Postgres via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          SQL_FILE: ${{ inputs.action == 'seed' && 'referral-posts.seed.sql' || 'referral-posts.cleanup.sql' }}
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USERNAME || 'ubuntu' }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          envs: SQL_FILE
+          command_timeout: 5m
+          script: |
+            set -e
+            cd /home/ubuntu/Backend
+            # SQL 파일은 배포 때 git pull로 서버에 들어온다 (이 워크플로우가 dev에 머지된 뒤 배포가 끝나야 함)
+            FILE="scripts/mock/$SQL_FILE"
+            if [ ! -f "$FILE" ]; then
+              echo "::error::$FILE 이 서버에 없습니다. dev 머지 후 배포(CD)가 끝났는지 확인하세요."
+              exit 1
+            fi
+            # DB 계정은 컨테이너에 설정된 값(POSTGRES_USER / POSTGRES_DB)을 그대로 사용
+            sudo docker exec -i genicheck-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < "$FILE"
